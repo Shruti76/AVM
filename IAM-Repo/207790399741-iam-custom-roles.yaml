@@ -1,0 +1,477 @@
+# IAM Custom Roles Setup Template for the AWSI Prod Account AWSI-P-4 207790399741
+---
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates IAM Roles, Groups and Polices for First American Organization Child Accounts
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks:
+        - W2001  # Ignore parameter not used warning
+
+Parameters:
+  # Roles
+  InteractiveAccessRoleName:
+    Type: String
+    Description: Enter the name for the InteractiveAccess on AWSI-P-4 Account
+    Default: "Firstam_AWSI-P-4_InteractiveAccess"
+  ProgrammaticAccessRoleName:
+    Type: String
+    Description: Enter the name for the ProgrammaticAccess on AWSI-P-4 Account
+    Default: "Firstam_AWSI-P-4_ProgrammaticAccess"
+  AzureTeamRoleName:
+    Type: String
+    Description: Enter the name for the ProgrammaticAccess used by Azure Team
+    Default: "Firstam_AWSI-P-4-AzureTeamRole"
+  PDSDeployerRoleName:
+    Type: String
+    Description:  Programmatic Role Name for PDS for this Account
+    Default: "Firstam_AWSI-P-4_PDSDeployer"
+  ApplicationName:
+    Description: Application Name associated to application to pass in as parameter into child resources
+    Type: String
+  EnvironmentName:
+    Description: Environment Name for application to pass in as parameter into child resources
+    Type: String
+  ApplicationID:
+    Description: Application ID number for the associated application to pass in as parameter into child resources
+    Type: String
+    MaxLength: 10
+  AVMAccessLevel:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+  AVMAccessLevelRead:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+    Default: "CAVM-Read"
+
+Resources:
+#----------------------------------------------------------------------------------------------
+  InteractiveAccessRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Standard name is explicitly set to be mapped with Azure AD."       
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref InteractiveAccessRoleName
+      MaxSessionDuration: 28800
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/SecurityAudit
+        - arn:aws:iam::aws:policy/AWSSupportAccess
+
+  InteractiveAccessRoleTags:
+    Type: "Custom::InteractiveAccessRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref InteractiveAccessRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+  #----------------------------------------------------------------------------------------------
+  ProgrammaticAccessRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F38
+            reason: "Maximum permission is controlled through permissions boundary."          
+          - id: W11
+            reason: "Maximum permission is controlled through permissions boundary."
+          - id: W28
+            reason: "Standard name is explicitly set to be mapped with Azure AD."
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref ProgrammaticAccessRoleName
+      PermissionsBoundary: !Sub arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-GlobalPermissionsBoundary
+      Policies:
+      - PolicyName: !Sub "${ProgrammaticAccessRoleName}-Inline"
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Sid: AllowIAMBasicAccess
+            Effect: Allow
+            Action:
+              ### Read
+              - iam:Get*
+              - iam:List*
+              ### Tagging
+              - iam:TagRole
+              - iam:UntagRole
+              ### EC2 permission
+              - iam:CreateInstanceProfile
+              - iam:AddRoleToInstanceProfile
+              - iam:RemoveRoleFromInstanceProfile
+              ### Update Role info
+              - iam:UpdateRole
+              - iam:UpdateRoleDescription
+              ### Pass Role
+              - iam:PassRole
+              ### Delete Role
+              - iam:DeleteRole
+              ### Assume Role
+              - sts:AssumeRoleWithSAML
+              ### Create / Update / Delete Policy
+              - iam:CreatePolicy
+              - iam:DeletePolicy
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+              - iam:DeleteInstanceProfile
+              - iam:UpdateAssumeRolePolicy
+            Resource: "*"
+          ### Allow IAM Privilege Access with Permissions Boundary
+          - Sid: AllowIAMAccess
+            Effect: Allow
+            Action:
+              ### Create / Update Role
+              - iam:CreateRole
+              ### Attach Policy to Role
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:PutRolePolicy
+              - iam:PutRolePermissionsBoundary
+              - iam:DeleteRole
+              - iam:DeleteRolePolicy 
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "iam:PermissionsBoundary": !Sub arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-GlobalPermissionsBoundary
+          ### DevOps Pipeline or Engineer should not update the Permissions Boundary
+          - Sid: NoDevOpsPolicyEdit
+            Effect: Deny
+            Action:
+              - iam:DeletePolicy
+              - iam:CreatePolicy
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+              - iam:SetDefaultPolicyVersion
+            Resource: 
+              - !Sub "arn:aws:iam::${AWS::AccountId}:policy/CAVM/*"
+          ### DevOps Pipeline or Enginner to delete existing Permissions Boundary
+          - Sid: NoBoundaryRoleDelete
+            Effect: Deny
+            Action:
+              - iam:DeleteRolePermissionsBoundary
+            Resource:
+              - !Join ['',['arn:aws:iam::', !Ref "AWS::AccountId", ':role/',!Ref ProgrammaticAccessRoleName]]     
+
+  ProgrammaticAccessRoleTags:
+    Type: "Custom::ProgrammaticAccessRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref ProgrammaticAccessRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+#----------------------------------------------------------------------------------------------
+  AzureTeamRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F38
+            reason: "Maximum permission is controlled through permissions boundary."          
+          - id: W11
+            reason: "Maximum permission is controlled through permissions boundary."
+          - id: W28
+            reason: "Standard name is explicitly set to be mapped with Azure AD."
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref AzureTeamRoleName
+      PermissionsBoundary: !Sub arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-GlobalPermissionsBoundary
+      Policies:
+      - PolicyName: !Sub "${AzureTeamRoleName}-Inline"
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Sid: AllowIAMBasicAccess
+            Effect: Allow
+            Action:
+              ### Read
+              - iam:Get*
+              - iam:List*
+              ### Tagging
+              - iam:TagRole
+              - iam:UntagRole
+              ### EC2 permission
+              - iam:CreateInstanceProfile
+              - iam:AddRoleToInstanceProfile
+              - iam:RemoveRoleFromInstanceProfile
+              ### Update Role info
+              - iam:UpdateRole
+              - iam:UpdateRoleDescription
+              ### Pass Role
+              - iam:PassRole
+              ### Delete Role
+              - iam:DeleteRole
+              ### Assume Role
+              - sts:AssumeRoleWithSAML
+              ### Create / Update / Delete Policy
+              - iam:CreatePolicy
+              - iam:DeletePolicy
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+              - iam:DeleteInstanceProfile
+              - iam:UpdateAssumeRolePolicy
+            Resource: "*"
+          ### Allow IAM Privilege Access with Permissions Boundary
+          - Sid: AllowIAMAccess
+            Effect: Allow
+            Action:
+              ### Create / Update Role
+              - iam:CreateRole
+              ### Attach Policy to Role
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:PutRolePolicy
+              - iam:PutRolePermissionsBoundary
+              - iam:DeleteRole
+              - iam:DeleteRolePolicy 
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "iam:PermissionsBoundary": !Sub arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-GlobalPermissionsBoundary
+          ### DevOps Pipeline or Engineer should not update the Permissions Boundary
+          - Sid: NoDevOpsPolicyEdit
+            Effect: Deny
+            Action:
+              - iam:DeletePolicy
+              - iam:CreatePolicy
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+              - iam:SetDefaultPolicyVersion
+            Resource: 
+              - !Sub "arn:aws:iam::${AWS::AccountId}:policy/CAVM/*"
+          ### DevOps Pipeline or Enginner to delete existing Permissions Boundary
+          - Sid: NoBoundaryRoleDelete
+            Effect: Deny
+            Action:
+              - iam:DeleteRolePermissionsBoundary
+            Resource:
+              - !Join ['',['arn:aws:iam::', !Ref "AWS::AccountId", ':role/',!Ref AzureTeamRoleName]]     
+
+  AzureTeamRoleTags:
+    Type: "Custom::AzureTeamRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref AzureTeamRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+#--------------------------------------------------------------------------------
+  PDSDeployerRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F38
+            reason: "Maximum permission is controlled through permissions boundary."          
+          - id: W11
+            reason: "Maximum permission is controlled through permissions boundary."
+          - id: W28
+            reason: "Standard name is explicitly set to be mapped with Azure AD."
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref PDSDeployerRoleName
+      PermissionsBoundary: !Sub arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-GlobalPermissionsBoundary
+      Policies:
+      - PolicyName: !Sub "${PDSDeployerRoleName}-Inline"
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Sid: AllowIAMBasicAccess
+            Effect: Allow
+            Action:
+              ### Read
+              - iam:Get*
+              - iam:List*
+              ### Tagging
+              - iam:TagRole
+              - iam:UntagRole
+              ### EC2 permission
+              - iam:CreateInstanceProfile
+              - iam:AddRoleToInstanceProfile
+              - iam:RemoveRoleFromInstanceProfile
+              ### Update Role info
+              - iam:UpdateRole
+              - iam:UpdateRoleDescription
+              ### Pass Role
+              - iam:PassRole
+              ### Delete Role
+              - iam:DeleteRole
+              ### Assume Role
+              - sts:AssumeRoleWithSAML
+              ### Create / Update / Delete Policy
+              - iam:CreatePolicy
+              - iam:DeletePolicy
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+              - iam:DeleteInstanceProfile
+              - iam:UpdateAssumeRolePolicy
+            Resource: "*"
+          ### Allow IAM Privilege Access with Permissions Boundary
+          - Sid: AllowIAMAccess
+            Effect: Allow
+            Action:
+              ### Create / Update Role
+              - iam:CreateRole
+              ### Attach Policy to Role
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:PutRolePolicy
+              - iam:PutRolePermissionsBoundary
+              - iam:DeleteRole
+              - iam:DeleteRolePolicy 
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "iam:PermissionsBoundary": !Sub arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-GlobalPermissionsBoundary
+          ### DevOps Pipeline or Engineer should not update the Permissions Boundary
+          - Sid: NoDevOpsPolicyEdit
+            Effect: Deny
+            Action:
+              - iam:DeletePolicy
+              - iam:CreatePolicy
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+              - iam:SetDefaultPolicyVersion
+            Resource: 
+              - !Sub "arn:aws:iam::${AWS::AccountId}:policy/CAVM/*"
+          ### DevOps Pipeline or Enginner to delete existing Permissions Boundary
+          - Sid: NoBoundaryRoleDelete
+            Effect: Deny
+            Action:
+              - iam:DeleteRolePermissionsBoundary
+            Resource:
+              - !Join ['',['arn:aws:iam::', !Ref "AWS::AccountId", ':role/',!Ref PDSDeployerRoleName]]
+
+  PDSDeployerRoleTags:
+    Type: "Custom::PDSDeployerRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref PDSDeployerRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+#--------------------------------------------------------------------------------
+  AccountListReader:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Standard name is explicitly set to be mapped with Azure AD."
+    Properties:
+      Description: Role to Read AccountLists
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: "FirstAm_AWSI-P-4_AccountListReader"
+      PermissionsBoundary: !Sub arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-GlobalPermissionsBoundary
+      Policies:
+      - PolicyName: "root-Inline"
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Sid: LambdaInvokePermissions
+            Effect: Allow
+            Action:
+            - 'lambda:ListFunctions'
+            - 'lambda:GetFunction'
+            - 'lambda:InvokeFunction'
+            - 'lambda:GetPolicy'
+            - 'lambda:ListTags'
+            Resource: 
+              - !Sub "arn:aws:lambda:us-west-2:${AWS::AccountId}:function:awsi-p-4-awsi-*"
+      Tags:                             
+        - Key: AVMAccessLevel
+          Value: !Ref AVMAccessLevelRead  
+
+Outputs:
+
+  StackName:
+      Description: Name of the current stack used for client CloudWatch Log Data Collection
+      Value: !Ref 'AWS::StackName'

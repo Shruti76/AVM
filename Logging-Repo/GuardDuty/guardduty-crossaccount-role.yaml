@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Template to create CrossAccount role in GuardDutyMaster Account'
+
+Parameters:
+  GuarddutyCrossAccountAccessRoleName:
+    Type: String
+    Description: The name of the role for the cross account access of the Guardduty
+  GuarddutyCrossAccountAccessPolicyName:
+    Type: String
+    Description: The name of the role for the cross account access of the Guardduty
+  ChildAccountID:
+    Type: String
+    Description: The ID of the child account
+
+Resources:
+  GuarddutyAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['-',[!Ref GuarddutyCrossAccountAccessRoleName,!Ref ChildAccountID]]
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref ChildAccountID
+            Action:
+              - sts:AssumeRole
+            Condition:
+              StringEquals:
+                "iam:ResourceTag/AVMAccessLevel": "CAVM"  
+      Path: /CAVM/
+      Policies:
+        - PolicyName: !Ref GuarddutyCrossAccountAccessPolicyName
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - guardduty:List*
+                  - guardduty:Get*
+                  - guardduty:Create*
+                  - guardduty:Delete*
+                  - guardduty:Update*
+                  - guardduty:AcceptInvitation
+                  - guardduty:ArchiveFindings
+                  - guardduty:DeclineInvitations
+                  - guardduty:DisassociateFromMasterAccount
+                  - guardduty:DisassociateMembers
+                  - guardduty:InviteMembers
+                  - guardduty:StartMonitoringMembers
+                  - guardduty:StopMonitoringMembers
+                  - guardduty:TagResource
+                  - guardduty:UnarchiveFindings
+                  - guardduty:UntagResource
+                  - cloudformation:Get*
+                  - cloudformation:List*
+                Resource: '*'
+

@@ -1,0 +1,15 @@
+{
+  "Parameters" : {
+    "BaseUrl"            : "https://qualysapi.qualys.com",
+    "SecretQAPI"         : "arn:aws:secretsmanager:us-west-2:037765247764:secret:Qualys-J0Wo23",
+    "SecretRegion"       : "us-west-2",
+    "QualysSecretKMSArn" : "arn:aws:kms:us-west-2:037765247764:key/faaa0a8b-45ab-411f-ba0e-e8ff1265dff9",
+    "RoleName"           : "Local_QualysAWSConnectorRole"    
+  },
+  "Tags" : {
+    "EnvironmentName" : "Prod",
+    "ApplicationName" : "Qualys",
+    "ApplicationID"   : "APP0002888",
+    "AVMAccessLevel"  : "CAVM"
+  }
+}

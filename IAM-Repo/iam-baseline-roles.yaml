@@ -1,0 +1,1287 @@
+# First American Organization Baseline Roles
+# IAM Baseline Setup Template
+---
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates Baseline IAM Roles and Polices for FirstAm Child Accounts
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks:
+        - W2001  # Ignore parameter not used warning
+
+Parameters:
+  VersionNumber:
+    Type: String
+    Description: Enter the current deployment version number
+    Default: "1.0"
+  AVMAccountID:
+    Description: AWS Account Number for AVM Account
+    Type: String
+    MaxLength: 12
+    MinLength: 12
+    AllowedPattern: "[0-9]+"
+    ## The Default value should be pulled from Configuration File (<accountID>-configuration.json)
+  AVMEnvironment:
+    Description:  Enter AVM Environment Type P,N,S 
+    Type: String
+  PortalAppName:
+    Description: Portal App name of the account
+    Type: String  
+  ArtifactStoreBucketName:
+    Description: Base name of the S3 Bucket in Tools Account, which holds the artifacts built by codebuild
+    Type: String
+  CMKARN:
+    Description: ARN of the KMS CMK created in AVM account
+    Type: String
+  # Core Deployment
+  ComplianceMonitorDeployerRoleName:
+    Type: String
+    Description: Enter the name for the Compliance Monitoring Deployer Pipeline Role
+    Default: "ComplianceMonitoringDeploy"
+  VPCFlowlogsCloudWatchRoleName:
+    Description: VPC Flowlogs CloudWatch IAM Role name
+    Type: String
+    Default: "VPC-Flowlogs-Cloudwatch-Access"
+  VPCLambdaExecutionRole:
+    Description: Role to execute Lambda function
+    Type: String
+    Default: "Local_DeleteDefaultVPCLambda"
+  SecurityAuditRoleName:
+    Type: String
+    Description: Enter the name for the InfoSec Audit Role
+    Default: "FirstAm_infosec-audit"
+  IamAuditRoleName:
+    Type: String
+    Description: Enter the name for the InfoSec IAM Audit Role
+    Default: "FirstAm_iam-audit"
+  IamAccessAdminRoleName:
+    Type: String
+    Description: Enter the name for the InfoSec IAM Access Admin Role
+    Default: "FirstAm_iam-access-admin"
+  SecurityIncidentResponseRoleName:
+    Type: String
+    Description: Enter the name for the InfoSec Security Incident Response Role
+    Default: "FirstAm_security-incident-response"
+  NetworkOpsRoleName:
+    Type: String
+    Description: Enter the name for the Network Ops Role
+    Default: "FirstAm_network-ops"
+  AwsPowerUserRoleName:
+    Type: String
+    Description: Enter the name for break glass purpose.
+    Default: "FirstAm_power-user"
+  CloudOpsRoleName:
+    Type: String
+    Description: Enter the name for the Cloud Ops Role
+    Default: "FirstAm_cloud-ops"
+  SuperCloudOpsRoleName:
+    Type: String
+    Description: Enter the name for the Super Cloud Ops Role
+    Default: "FirstAm_super-cloud-ops"
+  InfraReadOnlyRoleName:
+    Type: String
+    Description: Enter the name for the Read-Only Role - used by Enterprise Operations
+    Default: "FirstAm_infrastructure-reader"
+  SuperEnterpriseOpsRoleName:
+    Type: String
+    Description: Enter the name for the Enterprise Operations (aka Command Center) Role
+    Default: "FirstAm_super-enterprise-ops"  
+  PDSInteractiveAccessRoleName:
+    Type: String
+    Description: Enter the name for the BU Command Center Role
+    Default: "FirstAm_pds"  
+  SuperPDSInteractiveAccessRoleName:
+    Type: String
+    Description: Enter the name for the BU Command Center Role
+    Default: "FirstAm_super-pds"
+  SAMLSyncUserName:
+    Description: Enter the name for the IAM User used for Azure Sync
+    Type: String
+    Default: "Local_aws-role-azuresync"
+  #Cross Account Role used by EIM team to setup SAML access-keys
+  SAMLSyncUserManagerRoleName:
+    Description: Enter the name for the IAM role for SAML Azure Sync Setup manager
+    Type: String
+    #AVMAccountID will be automatically prefixed with the below default
+    Default: "_SAML-Sync-Admin"
+  GlobalRolePermissionsBoundaryName:
+    Type: String
+    Description: Enter the name for the Global Permissions Boundary Policy
+    Default: "FirstAm-GlobalPermissionsBoundary"
+  ApplicationName:
+    Description: Application Name associated to application to pass in as parameter into child resources
+    Type: String
+  EnvironmentName:
+    Description: Environment Name for application to pass in as parameter into child resources
+    Type: String
+  ApplicationID:
+    Description: Application ID number for the associated application to pass in as parameter into child resources
+    Type: String
+    MaxLength: 10
+  AVMAccessLevel:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+    Default: "CAVM"
+  AVMAccessLevelRead:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+    Default: "CAVM-Read"
+
+Resources:
+#================================================================================================
+# MAIN - PIPELINE ROLES
+
+  # Compliance Monitor Pipeline Role
+  ComplianceMonitorDeployerRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F3
+            reason: "IAM role should not allow * action on its permissions policy"
+          - id: F38
+            reason: "To be used by AVM only."             
+          - id: W11
+            reason: "IAM role should not allow * resource on its permissions policy"        
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+    Properties:
+      RoleName: !Sub Local_CAVM-${AVMEnvironment}_${ComplianceMonitorDeployerRoleName}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - cloudformation.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: !Sub "${ComplianceMonitorDeployerRoleName}-Inline"
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Action:
+            - iam:PassRole
+            - iam:GetRole
+            - iam:GetPolicy
+            - iam:CreateRole
+            - iam:PutRolePolicy
+            - iam:AttachRolePolicy
+            Resource:
+            - "*"
+            Effect: Allow
+          # Temporary Delete permissions to delete a stack,
+          # Remove these permissions for resources that should never be deleted outside the pipeline
+          - Action:
+            - iam:DeleteRolePolicy
+            - iam:DeleteRole
+            - iam:DetachRolePolicy
+            Resource:
+            - "*"
+            Effect: Allow
+          # Actions for Config based compliance Monitoring
+          - Action:
+            - logs:*
+            - config:*
+            Resource:
+            - "*"
+            Effect: Allow
+          # All required permission for the CodePipeline, CloudFormation and SNS Notification
+          - Action:
+            - sns:*
+            Resource:
+            - "*"
+            Effect: Allow
+          - Action:
+            - cloudformation:*
+            Resource:
+            - "*"
+            Effect: Allow
+          - Action:
+            - kms:*
+            Resource:
+            - !Ref CMKARN
+            Effect: Allow
+          - Action:
+            - s3:PutObject
+            - s3:Get*
+            - s3:List*
+            Resource:
+            - !Join ['',['arn:aws:s3:::',!Ref ArtifactStoreBucketName, '/*']]
+            - !Join ['',['arn:aws:s3:::',!Ref ArtifactStoreBucketName]]
+            Effect: Allow
+
+  ComplianceMonitorDeployerRoleTags:
+    Type: "Custom::ComplianceMonitorDeployerRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref ComplianceMonitorDeployerRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevel
+
+  #----------------------------------------------------------------------------------------------
+  # IAM Role to Execute the Lambda Function
+  DeleteDefaultVPCLambdaRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F3
+            reason: "IAM role should not allow * action on its permissions policy"
+          - id: W11
+            reason: "IAM role should not allow * resource on its permissions policy"
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"    
+    Properties:
+      RoleName:
+        Ref: VPCLambdaExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: !Sub "${VPCLambdaExecutionRole}-Inline"
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Action:
+            - ec2:*Vpc*
+            - ec2:*Subnet*
+            - ec2:*Gateway*
+            # - ec2:*Vpn*
+            - ec2:*Route*
+            - ec2:*Address*
+            - ec2:*SecurityGroup*
+            - ec2:*NetworkAcl*
+            # - ec2:*DhcpOptions*
+            - ec2:Describe*
+            Resource:
+            - "*"
+            Effect: Allow
+          - Action:
+            - sns:*
+            Resource:
+            - "*"
+            Effect: Allow
+          - Action:
+            - cloudformation:*
+            - apigateway:*
+            - kms:*
+            Resource:
+            - "*"
+            Effect: Allow
+          - Action:
+            - s3:PutObject
+            - s3:Get*
+            - s3:List*
+            Resource:
+            - !Join ['',['arn:aws:s3:::', !Ref ArtifactStoreBucketName, '/*']]
+            - !Join ['',['arn:aws:s3:::', !Ref ArtifactStoreBucketName]]
+            Effect: Allow      
+
+  DeleteDefaultVPCLambdaRoleTags:
+    Type: "Custom::DeleteDefaultVPCLambdaRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref DeleteDefaultVPCLambdaRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevel
+
+  #----------------------------------------------------------------------------------------------
+  # VPC FLOWLOGS-CLOUDWATCH SERVICE ROLE/POLICY
+  VPCFlowlogsCloudWatchRole:  ## FARolePublishVPCFlowLog original name
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F3
+            reason: "Exception for IAM role should not allow * action on its permissions policy"
+          - id: W11
+            reason: "Exception for IAM role should not allow * resource on its permissions policy"
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+    Properties:
+      Path: /
+      RoleName: !Sub Local_CAVM-${AVMEnvironment}_${VPCFlowlogsCloudWatchRoleName}
+      AssumeRolePolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            Sid: ""
+            Effect: Allow
+            Principal:
+                Service: vpc-flow-logs.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+      - PolicyName: !Sub "${VPCFlowlogsCloudWatchRoleName}-Inline"
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+              - 'logs:DescribeLogGroups'
+              - 'logs:DescribeLogStreams'
+            Resource: '*'
+
+  VPCFlowlogsCloudWatchRoleTags:
+    Type: "Custom::VPCFlowlogsCloudWatchRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref VPCFlowlogsCloudWatchRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevel
+
+#================================================================================================
+#FEDERATED ROLES
+
+  ## InfoSec Team Roles and Policies
+  # Security Audit
+  SecurityAudit:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref SecurityAuditRoleName
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/SecurityAudit
+
+  SecurityAuditRoleTags:
+    Type: "Custom::SecurityAuditRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref SecurityAudit
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #----------------------------------------------------------------------------------------------
+  # IAM Audit
+  IamAudit:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref IamAuditRoleName
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/IAMReadOnlyAccess
+        - arn:aws:iam::aws:policy/SecurityAudit
+
+  IamAuditRoleTags:
+    Type: "Custom::IamAuditRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref IamAudit
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #----------------------------------------------------------------------------------------------
+  # IAM Acccess Admin
+  IamAccessAdmin:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F3
+            reason: "Exception for IAM policy should not allow * action"
+          - id: W11
+            reason: "Exception for IAM policy should not allow * resource"
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref IamAccessAdminRoleName
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/SecurityAudit
+      Policies:
+        -
+          PolicyName: "AccessAdminPolicy"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              # Audit
+              - iam:List*
+              - iam:Get*
+              # Create
+              - iam:CreatePolicy
+              - iam:CreatePolicyVersion
+              - iam:CreateRole
+              # Modify
+              - iam:UpdateRole
+              - iam:UpdateAssumeRolePolicy
+              Resource: "*"
+
+  IamAccessAdminRoleTags:
+    Type: "Custom::IamAccessAdminRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref IamAccessAdmin
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #----------------------------------------------------------------------------------------------
+  # Security Incident Response
+  SecurityIncidentResponse:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F3
+            reason: "Exception for IAM policy should not allow * action"
+          - id: F38
+            reason: "IAM permission is explicitly denied."              
+          - id: W11
+            reason: "Exception for IAM policy should not allow * resource"
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref SecurityIncidentResponseRoleName
+      Policies:
+        -
+          PolicyName: "AccessAdminPolicy"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            -
+              Effect: Allow
+              Action: '*'
+              Resource: '*'
+            -
+              Effect: Deny
+              Action: 'iam:*'
+              Resource: "*"
+
+  SecurityIncidentResponseRoleTags:
+    Type: "Custom::SecurityIncidentResponseRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref SecurityIncidentResponse
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #----------------------------------------------------------------------------------------------
+  ## Network Ops AD Role
+  NetworkOps:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref NetworkOpsRoleName
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/SecurityAudit
+        - arn:aws:iam::aws:policy/job-function/NetworkAdministrator
+
+  NetworkOpsRoleTags:
+    Type: "Custom::NetworkOpsRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref NetworkOps
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #----------------------------------------------------------------------------------------------
+  ## AWS Power User AD Role
+  AwsPowerUser:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref AwsPowerUserRoleName
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/SecurityAudit
+        - arn:aws:iam::aws:policy/PowerUserAccess
+
+  AwsPowerUserRoleTags:
+    Type: "Custom::AwsPowerUserRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref AwsPowerUser
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #----------------------------------------------------------------------------------------------
+  ## FirstAM Enterprise Operations AD Role
+  SuperEnterpriseOps:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+          - id: W11
+            reason: "Exception for IAM role should not allow * resource on its permissions policy"
+          - id: F3
+            reason: "Exception for IAM policy should not allow * action"
+          - id: F38
+            reason: "Maximum permission is controlled through permissions boundary and role policy is as requested but should be revisited in future."             
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref SuperEnterpriseOpsRoleName
+      MaxSessionDuration: 28800
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/SecurityAudit
+        - arn:aws:iam::aws:policy/AmazonSSMFullAccess
+        - arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess
+        - !Sub "arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-SuperEC2"
+        - !Sub "arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-SuperS3"
+        - !Sub "arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-SuperRDS"
+        - arn:aws:iam::aws:policy/AWSSupportAccess
+      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/CAVM/${GlobalRolePermissionsBoundaryName}" 
+      Policies:
+        - 
+          PolicyName: !Ref SuperEnterpriseOpsRoleName
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action: 
+              - cloudformation:*
+              - iam:ListRoleTags
+              - iam:PassRole
+              - sns:Subscribe  
+              - sns:Unsubscribe
+              - sns:ConfirmSubscription
+              - sns:Set*
+              - sns:List*
+              - sns:Get*
+              - sns:Create*
+              - sns:Delete*
+              - sns:Publish
+              - cloudtrail:CreateTrail
+              - cloudtrail:DescribeTrail
+              - cloudtrail:DeleteTrail
+              - cloudtrail:Get*
+              - cloudtrail:List*
+              - cloudtrail:*Logging
+              - cloudtrail:PutEventSelectors     
+              Resource: "*"
+ 
+  SuperEnterpriseOpsRoleTags:
+    Type: "Custom::SuperEnterpriseOpsRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref SuperEnterpriseOps
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #----------------------------------------------------------------------------------------------
+  # CloudOps AD Role - Cloud Team / AWS Product Team
+  CloudOps:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F3
+            reason: "Exception for IAM role should not allow * action on its permissions policy"
+          - id: W11
+            reason: "Exception for IAM role should not allow * resource on its permissions policy"
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref CloudOpsRoleName
+      MaxSessionDuration: 28800
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSSupportAccess
+        - arn:aws:iam::aws:policy/SecurityAudit
+        - arn:aws:iam::aws:policy/job-function/SystemAdministrator
+      Policies:
+        -
+          PolicyName: "CloudOpsPolicy"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Deny
+              Action:
+              - autoscaling:Delete*
+              - autoscaling:Detach*
+              - aws-portal:Modify*
+              - cloudwatch:Delete*
+              - codepipeline:Disable*
+              - codepipeline:Detach*
+              - codepipeline:Delete*
+              - ec2:Delete*
+              - ec2:Deregister*
+              - ec2:Detach*
+              - lambda:Delete*
+              - sns:Delete*
+              - sqs:Delete*
+              Resource: "*"
+
+  CloudOpsRoleTags:
+    Type: "Custom::CloudOpsRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref CloudOps
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevel
+
+  #----------------------------------------------------------------------------------------------
+  # SuperCloudOps Role - Elevated Permissions Cloud Team
+  SuperCloudOps:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F3
+            reason: "Exception for IAM role should not allow * action on its permissions policy"
+          - id: W11
+            reason: "Exception for IAM role should not allow * resource on its permissions policy"
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref SuperCloudOpsRoleName
+      MaxSessionDuration: 28800
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/SecurityAudit
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+        - arn:aws:iam::aws:policy/job-function/SystemAdministrator
+        - arn:aws:iam::aws:policy/job-function/NetworkAdministrator
+        - arn:aws:iam::aws:policy/AmazonSSMFullAccess
+        - arn:aws:iam::aws:policy/AWSResourceAccessManagerFullAccess
+      Policies:
+        -
+          PolicyName: "SuperCloudOpsPolicy"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            -
+              Effect: Allow
+              Action:
+              - cloudformation:*
+              - codebuild:*
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+              - iam:DeletePolicy
+              - iam:TagRole
+              - iam:UntagRole
+              - iam:TagUser
+              - iam:UntagUser
+              - aws-marketplace:*
+              - aws-portal:View*
+              - resource-groups:*
+              - support:*
+              Resource: "*"
+            -
+              Effect: Deny
+              Action: aws-portal:Modify*
+              Resource: "*"
+
+  SuperCloudOpsRoleTags:
+    Type: "Custom::SuperCloudOpsRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref SuperCloudOps
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevel
+
+  ReadOnly:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref InfraReadOnlyRoleName
+      MaxSessionDuration: 28800
+      PermissionsBoundary: !Sub arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-GlobalPermissionsBoundary
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/ReadOnlyAccess
+        - arn:aws:iam::aws:policy/AWSSupportAccess
+      Policies:
+      - PolicyName: "Reader-Inline"
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Sid: ExplicitDeny
+            Effect: Deny
+            Action: 
+              - s3:GetObject*
+              - dynamodb:GetItem
+              - dynamodb:BatchGetItem
+            Resource: "*"
+
+  ReadOnlyRoleTags:
+    Type: "Custom::ReadOnlyRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref ReadOnly
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+#================================================================================================
+### CROSS - ACCOUNT HUMAN ROLES ####
+#================================================================================================
+  # IAM Role used to the Download the Credentials for FAAzureSyncUser
+  SAMLSyncUserManagerRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F3
+            reason: "IAM role should not allow * action on its permissions policy"
+          - id: W11
+            reason: "IAM role should not allow * resource on its permissions policy"     
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+    Properties:
+      RoleName: !Sub ${AVMAccountID}${SAMLSyncUserManagerRoleName}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS:
+            - !Ref AVMAccountID
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+        -
+          PolicyName: !Sub "${AVMAccountID}${SAMLSyncUserManagerRoleName}-Inline"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - iam:DeleteAccessKey
+                - iam:UpdateAccessKey
+                - iam:CreateAccessKey
+              Resource: !Sub arn:aws:iam::*:user/${SAMLSyncUserName}
+            - Effect: Allow
+              Action:
+                - iam:List*
+                - iam:Get*
+              Resource: "*"
+
+  SAMLSyncUserManagerRoleTags:
+    Type: "Custom::SAMLSyncUserManagerRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref SAMLSyncUserManagerRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevel
+
+
+  FirstamPDSInteractiveAccessRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref PDSInteractiveAccessRoleName
+      MaxSessionDuration: 28800
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/job-function/ViewOnlyAccess
+        - arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess
+        - !Sub "arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-DevOps"
+        - arn:aws:iam::aws:policy/AWSSupportAccess
+      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/CAVM/${GlobalRolePermissionsBoundaryName}" 
+
+  FirstamPDSInteractiveAccessRoleTags:
+    Type: "Custom::FirstamPDSInteractiveAccessRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref FirstamPDSInteractiveAccessRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #-----------------------------------------------------------------------------------------------
+  # Platform Delivery (PDS) Team Super Interactive Access Role
+  FirstamSuperPDSInteractiveAccessRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref SuperPDSInteractiveAccessRoleName
+      MaxSessionDuration: 28800
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/job-function/ViewOnlyAccess
+        - arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess
+        - !Sub "arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-DevOps"
+        - !Sub "arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-SuperDevOps"
+      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/CAVM/${GlobalRolePermissionsBoundaryName}" 
+ 
+  FirstamSuperPDSInteractiveAccessRoleTags:
+    Type: "Custom::FirstamSuperPDSInteractiveAccessRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref FirstamSuperPDSInteractiveAccessRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #-----------------------------------------------------------------------------------------------
+  # Account roles
+  AccountReadRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F3
+            reason: "IAM role should not allow * action on its permissions policy"
+          - id: W11
+            reason: "IAM role should not allow * resource on its permissions policy"        
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Sub
+        - "FirstAm_${accountSNR}-${accountEnv}-${accountNum}_ReadOnlyRole"
+        - { accountSNR: !Select [1, !Split ["-", !Ref PortalAppName]], accountEnv: !Select [2, !Split ["-", !Ref PortalAppName]], accountNum: !Select [3, !Split ["-", !Ref PortalAppName]] }        
+      PermissionsBoundary: !Sub arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-GlobalPermissionsBoundary
+      MaxSessionDuration: 28800
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/ReadOnlyAccess
+        - arn:aws:iam::aws:policy/AWSSupportAccess
+      Policies:
+      - PolicyName: "root-Inline"
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Sid: ExplicitDeny
+            Effect: Deny
+            Action: 
+              - s3:GetObject*
+              - dynamodb:GetItem
+              - dynamodb:BatchGetItem
+            Resource: "*"
+          - Sid: AllowBillingRead
+            Effect: Allow
+            Action:
+              - aws-portal:ViewBilling
+              - aws-portal:ViewUsage
+              - budgets:ViewBudget
+            Resource: "*"          
+      Tags:                             
+        - Key: AVMAccessLevel
+          Value: !Ref AVMAccessLevelRead
+
+  AccountProgrammaticRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F3
+            reason: "IAM role should not allow * action on its permissions policy"
+          - id: W11
+            reason: "IAM role should not allow * resource on its permissions policy"         
+          - id: W28
+            reason: "Standard name is explicitly set to be mapped with Azure AD."
+          - id: F38
+            reason: "Maximum permission is controlled through permissions boundary."             
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Sub
+        - "FirstAm_${accountSNR}-${accountEnv}-${accountNum}_ProgrammaticRole"
+        - { accountSNR: !Select [1, !Split ["-", !Ref PortalAppName]], accountEnv: !Select [2, !Split ["-", !Ref PortalAppName]], accountNum: !Select [3, !Split ["-", !Ref PortalAppName]] }      
+      PermissionsBoundary: !Sub arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-GlobalPermissionsBoundary
+      MaxSessionDuration: 28800
+      Policies:
+      - PolicyName: "root-Inline"
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Sid: AllowIAMBasicAccess
+            Effect: Allow
+            Action:
+              ### Read
+              - iam:Get*
+              - iam:List*
+              ### Tagging
+              - iam:TagRole
+              - iam:UntagRole
+              ### EC2 permission
+              - iam:CreateInstanceProfile
+              - iam:AddRoleToInstanceProfile
+              - iam:RemoveRoleFromInstanceProfile
+              ### Update Role info
+              - iam:UpdateRole
+              - iam:UpdateRoleDescription
+              ### Pass Role
+              - iam:PassRole
+              ### Delete Role
+              - iam:DeleteRole
+              ### Assume Role
+              - sts:AssumeRoleWithSAML
+              ### Create / Update / Delete Policy
+              - iam:CreatePolicy
+              - iam:DeletePolicy
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+              - iam:DeleteInstanceProfile
+              - iam:UpdateAssumeRolePolicy
+            Resource: "*"
+          ### Allow IAM Privilege Access with Permissions Boundary
+          - Sid: AllowIAMAccess
+            Effect: Allow
+            Action:
+              ### Create / Update Role
+              - iam:CreateRole
+              ### Attach Policy to Role
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:PutRolePolicy
+              - iam:PutRolePermissionsBoundary
+              - iam:DeleteRole
+              - iam:DeleteRolePolicy 
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "iam:PermissionsBoundary": !Sub arn:aws:iam::${AWS::AccountId}:policy/CAVM/FirstAm-GlobalPermissionsBoundary
+          ### DevOps Pipeline or Engineer should not update the Permissions Boundary
+          - Sid: NoDevOpsPolicyEdit
+            Effect: Deny
+            Action:
+              - iam:DeletePolicy
+              - iam:CreatePolicy
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+              - iam:SetDefaultPolicyVersion
+            Resource: 
+              - !Sub "arn:aws:iam::${AWS::AccountId}:policy/CAVM/*"
+          ### DevOps Pipeline or Enginner to delete existing Permissions Boundary
+          - Sid: NoBoundaryRoleDelete
+            Effect: Deny
+            Action:
+              - iam:DeleteRolePermissionsBoundary
+            Resource: !Sub
+              - "arn:aws:iam::${AWS::AccountId}:role/FirstAm_${accountSNR}-${accountEnv}-${accountNum}_ProgrammaticRole"
+              - { accountSNR: !Select [1, !Split ["-", !Ref PortalAppName]], accountEnv: !Select [2, !Split ["-", !Ref PortalAppName]], accountNum: !Select [3, !Split ["-", !Ref PortalAppName]] }
+      Tags:                             
+        - Key: AVMAccessLevel
+          Value: !Ref AVMAccessLevelRead              
+
+#================================================================================================
+Outputs:
+  VPCFlowlogsCloudWatchRoleArn:
+      Description: VPC Flowlogs CloudWatch IAM Role Arn
+      Value: !GetAtt [VPCFlowlogsCloudWatchRole,Arn]
+      ## The role name is imported VPC create template - make sure the export/import names are in sync
+      Export:
+        Name: VPCFlowlogsCloudWatchRoleArn
+  TemplateVersion:
+      Description: CodePipeline IAM Roles pipeline CloudFormation Template Version Number
+      Value: !Ref VersionNumber
+  StackName:
+      Description: Name of the current stack used for client CloudWatch Log Data Collection
+      Value: !Ref 'AWS::StackName'

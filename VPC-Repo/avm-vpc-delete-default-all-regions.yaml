@@ -1,0 +1,8 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "AWS CloudFormation Template: Create CustomResource to Delete Default VPC in all Regions"
+
+Resources:
+  DeleteVPC:
+    Type: "Custom::DeleteDefaultVPCAllRegion"
+    Properties: 
+      ServiceToken: !ImportValue 'DeleteDefaultVPC-Lambda-Arn'

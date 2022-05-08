@@ -1,0 +1,12 @@
+{
+  "Parameters" : {
+    "GuarddutyCrossAccountAccessRoleName"            : "Local_AWSI-P-guardduty-crossaccount",
+    "GuarddutyCrossAccountAccessPolicyName"         : "GuarddutyCrossAccountAccessPolicy"   
+  },
+  "Tags" : {
+    "EnvironmentName" : "Prod",
+    "ApplicationName" : "Amazon Web Services Infrastructure",
+    "ApplicationID"   : "APP0001135",
+    "AVMAccessLevel"  : "CAVM"
+  }
+}

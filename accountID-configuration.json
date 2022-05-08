@@ -1,0 +1,14 @@
+{
+  "Parameters" : {
+    "ChildAccountID" : "<AccountID>",
+    "ArtifactStoreBucketNameUSWest2" : "<S3 Bucket Name>",
+    "AVMCMKArnUSEast2" : "<Key ARN>", << TODO add Parameter name in templates
+    "ArtifactStoreBucketNameUSEast2" : "<S3 Bucket Name>",
+    "AVMCMKArnUSEast2" : "<Key ARN>" << TODO add Parameter name in templates
+  },
+  "Tags" : {
+    "EnvironmentName" : "Prod",
+    "ApplicationName" : "Amazon Web Services Infrastructure",
+    "ApplicationID"   : "APP0001135"
+  }
+}

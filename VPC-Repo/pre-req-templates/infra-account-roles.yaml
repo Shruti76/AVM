@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Roles to allow child account to assume in infra account to complete tasks'
+Parameters:
+  ChildAccountID:
+    Type: String
+    Description: Child account that will assume this role
+  TGWAttachmentRoleName:
+    Type: String
+    Description: Role name for child account to use to accept and tag its TGW attachment
+  RolePath:
+    Type: String
+    Description: Subpath to place roles in.
+    Default: /CAVM/
+Resources:  
+  TGWAttachmentRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Explicit name defined to allow AVM to assume role"                   
+    Properties:
+      RoleName: !Sub "${TGWAttachmentRoleName}"
+      Description: "CAVM Role to allow child account to accept and tag the TGW Attachment in infrastructure account"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Ref ChildAccountID
+            Action:
+              - sts:AssumeRole
+            Condition:
+              StringEquals:
+                "iam:ResourceTag/AVMAccessLevel": "CAVM"
+      Path: !Ref RolePath
+      Policies:
+        -
+          PolicyName: inline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            -
+              Effect: Allow
+              Action:
+                - ec2:DescribeTransitGateway*
+                - ec2:GetTransitGateway*
+              Resource: "*"
+            -
+              Effect: Allow
+              Action:
+                - ec2:CreateTags
+                - ec2:DeleteTags
+                - ec2:AcceptTransitGatewayVpcAttachment
+                - ec2:RejectTransitGatewayVpcAttachment
+                - ec2:AssociateTransitGatewayRouteTable
+                - ec2:EnableTransitGatewayRouteTablePropagation 
+                - ec2:DisableTransitGatewayRouteTablePropagation
+                - ec2:DisassociateTransitGatewayRouteTable 
+              Resource: "*"
+      Tags:
+        - Key: AVMAccessLevel
+          Value: "CAVM"               

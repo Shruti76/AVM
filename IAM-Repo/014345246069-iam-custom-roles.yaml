@@ -1,0 +1,89 @@
+# IAM Custom Roles Setup Template for the AWSI Non Prod #014345246069 (AWSI-N-5)
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates IAM Roles, Groups and Polices for First American Organization Child Accounts
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks:
+        - W2001  # Ignore parameter not used warning
+Parameters:
+  # Setup
+  VersionNumber:
+    Type: String
+    Description: Enter the current deployment version number
+    Default: "1.0"
+
+  # Roles
+  ReadOnlyRoleName:
+    Type: String
+    Description: Enter the name for the Read Only Role
+    Default: "FirstAm_AWSI-N-5_Reader"
+
+  ApplicationName:
+    Description: Application Name associated to application to pass in as parameter into child resources
+    Type: String
+  EnvironmentName:
+    Description: Environment Name for application to pass in as parameter into child resources
+    Type: String
+  ApplicationID:
+    Description: Application ID number for the associated application to pass in as parameter into child resources
+    Type: String
+    MaxLength: 10
+  AVMAccessLevel:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+  AVMAccessLevelRead:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+    Default: "CAVM-Read"
+
+Resources:
+  # ReadOnly Role
+  ReadOnly:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Standard name is explicitly set."     
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref ReadOnlyRoleName
+      MaxSessionDuration: 28800
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/job-function/ViewOnlyAccess
+
+  ReadOnlyRoleTags:
+    Type: "Custom::ReadOnlyRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref ReadOnly
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+#----------------------------------------------------------------------------------------------  
+Outputs:
+  TemplateVersion:
+      Description: CodePipeline IAM Roles pipeline CloudFormation Template Version Number
+      Value: !Ref VersionNumber
+  StackName:
+      Description: Name of the current stack used for client CloudWatch Log Data Collection
+      Value: !Ref 'AWS::StackName'

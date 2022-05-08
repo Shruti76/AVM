@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Logging and monitoring pre-req deployment roles'
+Parameters:
+  GuardDutyDeployerRoleName:
+    Type: String
+    Description: GuardDuty Deployer Role
+
+Resources:  
+  GuardDutyDeployerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - cloudformation.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      RoleName: !Ref GuardDutyDeployerRoleName
+      Policies:
+        -
+          PolicyName: !Sub "${GuardDutyDeployerRoleName}-inline"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            -
+              Effect: Allow
+              Action:
+                - guardduty:List*
+                - guardduty:Get*
+                - guardduty:Create*
+                - guardduty:Delete*
+                - guardduty:Update*
+                - guardduty:AcceptInvitation
+                - guardduty:ArchiveFindings
+                - guardduty:DeclineInvitations
+                - guardduty:DisassociateFromMasterAccount
+                - guardduty:DisassociateMembers
+                - guardduty:InviteMembers
+                - guardduty:StartMonitoringMembers
+                - guardduty:StopMonitoringMembers
+                - guardduty:TagResource
+                - guardduty:UnarchiveFindings
+                - guardduty:UntagResource
+                - lambda:ListFunctions
+                - lambda:GetFunction
+                - lambda:GetFunctionConfiguration
+                - lambda:InvokeFunction
+                - iam:CreateServiceLinkedRole
+              Resource: "*"

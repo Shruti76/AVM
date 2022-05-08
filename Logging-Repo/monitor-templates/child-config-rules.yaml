@@ -1,0 +1,250 @@
+# Cloudformation template for child config rules
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Managed Config Rules
+
+Parameters:
+  ConfigRuleNamePrefix:
+    Type: String
+    Default: ''
+    Description: The prefix name of the AWS config rules created using this template.
+  MaximumExecutionFrequency:
+    Type: String
+    Default: TwentyFour_Hours
+    Description: The frequency that you want AWS Config to run evaluations for the
+      rule.
+    MinLength: '1'
+    ConstraintDescription: This parameter is required.
+    AllowedValues:
+    - One_Hour
+    - Three_Hours
+    - Six_Hours
+    - Twelve_Hours
+    - TwentyFour_Hours
+
+  # Common parameters
+  ApplicationName:
+    Description: Application Name associated to application to pass in as parameter into child resources
+    Type: String
+  EnvironmentName:
+    Description: Environment Name for application to pass in as parameter into child resources
+    Type: String
+  ApplicationID:
+    Description: Application ID number for the associated application to pass in as parameter into child resources
+    Type: String
+    MaxLength: 10
+  AVMAccessLevelRead:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+    Default: "CAVM-Read"
+  AVMAccessLevel:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+    Default: "CAVM"
+Metadata:
+  cfn-lint:
+    config:
+      regions:
+      - us-east-2
+      - us-west-2
+      ignore_checks:
+      - W2001
+
+#-------------------------------------------------------------------------------------
+Resources:
+# AWS Managed config rules
+  # AWS Managed Config rule for CLOUD_TRAIL_ENABLED
+  CloudTrailConfigRule:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: !Sub "${ConfigRuleNamePrefix}cloudtrail-enabled"
+      Description: Checks whether AWS CloudTrail is enabled in your AWS account.
+      InputParameters: {}
+      Scope: {}
+      Source:
+        Owner: AWS
+        SourceIdentifier: CLOUD_TRAIL_ENABLED
+      MaximumExecutionFrequency:
+        Ref: MaximumExecutionFrequency
+
+  CloudTrailConfigRuleTags:
+    Type: "Custom::LambdaCallout"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::Config::ConfigRule'
+      ResourceArn: !GetAtt [CloudTrailConfigRule, Arn]
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #-----------------------------------------------------------------------------------
+  # AWS Managed Config rule for EC2_INSTANCE_DETAILED_MONITORING_ENABLED 
+  EC2DetailMonitorConfigRule:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: !Sub "${ConfigRuleNamePrefix}ec2-instance-detailed-monitoring-enabled"
+      Description: Checks whether detailed monitoring is enabled for EC2 instances.
+      InputParameters: {}
+      Scope:
+        ComplianceResourceTypes:
+        - AWS::EC2::Instance
+      Source:
+        Owner: AWS
+        SourceIdentifier: EC2_INSTANCE_DETAILED_MONITORING_ENABLED
+
+  EC2DetailMonitorConfigRuleTags:
+    Type: "Custom::LambdaCallout"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::Config::ConfigRule'
+      ResourceArn: !GetAtt [EC2DetailMonitorConfigRule, Arn]
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #-----------------------------------------------------------------------------------
+  # AWS Managed Config rule for MULTI_REGION_CLOUD_TRAIL_ENABLED
+  MultiRegionCloudTrailConfigRule:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: !Sub "${ConfigRuleNamePrefix}multi-region-cloudtrail-enabled"
+      Description: Checks that there is at least one multi-region AWS CloudTrail.
+        The rule is non-compliant if the trails do not match input parameters
+      InputParameters: {}
+      Scope: {}
+      Source:
+        Owner: AWS
+        SourceIdentifier: MULTI_REGION_CLOUD_TRAIL_ENABLED
+      MaximumExecutionFrequency:
+        Ref: MaximumExecutionFrequency 
+
+  MultiRegionCloudTrailConfigRuleTags:
+    Type: "Custom::LambdaCallout"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::Config::ConfigRule'
+      ResourceArn: !GetAtt [MultiRegionCloudTrailConfigRule, Arn]
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #-----------------------------------------------------------------------------------
+  # AWS Managed Config rule for ROOT_ACCOUNT_MFA_ENABLED
+  RootMFAConfigRule:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: !Sub "${ConfigRuleNamePrefix}root-account-mfa-enabled"
+      Description: Checks whether the root user of your AWS account requires multi-factor
+        authentication for console sign-in.
+      InputParameters: {}   
+      Scope: {}
+      Source:
+        Owner: AWS
+        SourceIdentifier: ROOT_ACCOUNT_MFA_ENABLED
+      MaximumExecutionFrequency:
+        Ref: MaximumExecutionFrequency
+
+  RootMFAConfigRuleTags:
+    Type: "Custom::LambdaCallout"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::Config::ConfigRule'
+      ResourceArn: !GetAtt [RootMFAConfigRule, Arn]
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #-----------------------------------------------------------------------------------
+  # AWS Managed Config rule for S3_BUCKET_PUBLIC_READ_PROHIBITED 
+  ProhibitS3PublicReadConfigRule:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: !Sub "${ConfigRuleNamePrefix}s3-bucket-public-read-prohibited"
+      Description: Checks that your S3 buckets do not allow public read access. If
+        an S3 bucket policy or bucket ACL allows public read access, the bucket is
+        noncompliant.
+      InputParameters: {}    
+      Scope:
+        ComplianceResourceTypes:
+        - AWS::S3::Bucket
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_BUCKET_PUBLIC_READ_PROHIBITED
+      MaximumExecutionFrequency:
+        Ref: MaximumExecutionFrequency         
+
+  ProhibitS3PublicReadConfigRuleTags:
+    Type: "Custom::LambdaCallout"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::Config::ConfigRule'
+      ResourceArn: !GetAtt [ProhibitS3PublicReadConfigRule, Arn]
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #-----------------------------------------------------------------------------------
+  # AWS Managed config rule for S3_BUCKET_PUBLIC_WRITE_PROHIBITED
+  ProhibitS3PublicWriteConfigRule:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: !Sub "${ConfigRuleNamePrefix}s3-bucket-public-write-prohibited"
+      Description: Checks that your S3 buckets do not allow public write access. If
+        an S3 bucket policy or bucket ACL allows public write access, the bucket is
+        noncompliant.
+      InputParameters: {}     
+      Scope:
+        ComplianceResourceTypes:
+        - AWS::S3::Bucket
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_BUCKET_PUBLIC_WRITE_PROHIBITED
+      MaximumExecutionFrequency:
+        Ref: MaximumExecutionFrequency  
+
+  ProhibitS3PublicWriteConfigRuleTags:
+    Type: "Custom::LambdaCallout"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::Config::ConfigRule'
+      ResourceArn: !GetAtt [ProhibitS3PublicWriteConfigRule, Arn]
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #-----------------------------------------------------------------------------------

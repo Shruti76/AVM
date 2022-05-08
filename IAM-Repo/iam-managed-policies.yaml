@@ -1,0 +1,1411 @@
+# IAM Customer Managed Policies
+AWSTemplateFormatVersion: '2010-09-09' 
+Description: Customer Managed Policies for usage in IAM Roles, Groups for First American Organization Child Accounts 
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks:
+        - W2001  # Ignore parameter not used warning
+        - W8001  # Ignore condition not used warning
+Parameters: 
+  GlobalRolePermissionsBoundaryName:
+    Type: String
+    Description: Enter the name for the Global Permissions Boundary Policy
+    Default: "FirstAm-GlobalPermissionsBoundary"
+  PolicyPath:
+    Type: String
+    Description: Subpath to create the policies in.
+    Default: /CAVM/
+  AccountEnvironment:
+    Type: String
+    Description: Environment letter of the account
+    Default: P
+
+Conditions:
+  IsBasicAccount: !Or [!Equals [!Ref AccountEnvironment, 'P'], !Equals [!Ref AccountEnvironment, 'N']]
+  IsSandboxAccount: !Equals [!Ref AccountEnvironment, 'S']
+
+Resources:
+  #Customer Managed Policies 
+  SandboxTesterPolicy: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-SandboxTester
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: 2012-10-17 
+        Statement: 
+          - Effect: Allow 
+            Action: 
+            # Ec2 deployment permission 
+            - ec2:Allocate* 
+            - ec2:AttachVolume 
+            - ec2:AuthorizeSecurityGroupEgress 
+            - ec2:AuthorizeSecurityGroupIngress 
+            - ec2:Create* 
+            - ec2:Describe* 
+            - ec2:Enable* 
+            - ec2:Get* 
+            - ec2:AssociateIamInstanceProfile 
+            - ec2:List* 
+            - ec2:RegisterImage 
+            - ec2:RunInstances 
+            - ec2:StartInstances 
+            Resource: "*" 
+ 
+  SuperSandboxTesterPolicy: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-SuperSandboxTester
+      Path: !Ref PolicyPath      
+      PolicyDocument: 
+        Version: 2012-10-17 
+        Statement: 
+          - Effect: Allow 
+            Action: 
+            - ec2:* 
+            Resource: "*" 
+ 
+  NonSuperBoundariesPolicy: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-NonSuperBoundaries
+      Path: !Ref PolicyPath      
+      PolicyDocument: 
+        Version: 2012-10-17 
+        Statement: 
+          - Effect: Deny 
+            Action: 
+            - ec2:Accept* 
+            - ec2:Assign* 
+            - ec2:Cancel* 
+            - ec2:Delete* 
+            - ec2:Deregister* 
+            - ec2:Detach* 
+            - ec2:Modify* 
+            - ec2:RebootInstances 
+            - ec2:Release* 
+            - ec2:Replace* 
+            - ec2:Request* 
+            - ec2:Reset* 
+            - ec2:Revoke* 
+            - ec2:StopInstances 
+            - ec2:TerminateInstances 
+            Resource: "*" 
+ 
+  AllBoundariesPolicy: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-AllBoundaries
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: 2012-10-17 
+        Statement: 
+          - Effect: Deny 
+            Action: 
+            - aws-portal:*Billing 
+            - ec2:AcceptVpcPeeringConnection 
+            - ec2:AssignIpv6Addresses 
+            - ec2:AttachInternetGateway 
+            - ec2:AttachVpnGateway 
+            - ec2:CreateCustomerGateway 
+            - ec2:CreateDefaultSubnet 
+            - ec2:CreateDefaultVpc 
+            - ec2:CreateEgressOnlyInternetGateway 
+            - ec2:CreateInternetGateway 
+            - ec2:CreateNatGateway 
+            - ec2:CreateVpcPeeringConnection 
+            - ec2:CreateVpnConnection 
+            - ec2:CreateVpnConnectionRoute 
+            - ec2:CreateVpnGateway 
+            - ec2:ModifySubnetAttribute 
+            - directconnect:* 
+            - iam:deletesamlprovider 
+            - organizations:* 
+            Resource: "*" 
+ 
+  ## EC2 Read-Write Managed Policy 
+  EC2ReadWrite: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-EC2
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: EC2EBSAllowAll 
+          Action: ec2:* 
+          Effect: Allow 
+          Resource: "*" 
+        - Effect: Allow 
+          Action: elasticloadbalancing:* 
+          Resource: "*" 
+        - Effect: Allow 
+          Action: cloudwatch:* 
+          Resource: "*" 
+        - Effect: Allow 
+          Action: autoscaling:* 
+          Resource: "*" 
+        - Effect: Allow 
+          Action: iam:CreateServiceLinkedRole 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              iam:AWSServiceName: 
+              - autoscaling.amazonaws.com 
+              - ec2scheduled.amazonaws.com 
+              - elasticloadbalancing.amazonaws.com 
+              - spot.amazonaws.com 
+              - spotfleet.amazonaws.com 
+              - transitgateway.amazonaws.com 
+        - Sid: EC2EBSDenySuper 
+          Effect: Deny 
+          Action: 
+          - ec2:Terminate* 
+          - ec2:Delete* 
+          Resource: 
+          - arn:aws:ec2:*:*:subnet/* 
+          - arn:aws:ec2:*:*:vpn-gateway/* 
+          - arn:aws:ec2:*:*:transit-gateway-route-table/* 
+          - arn:aws:ec2:*:*:reserved-instances/* 
+          - arn:aws:ec2:*:*:client-vpn-endpoint/* 
+          - arn:aws:ec2:*:*:vpn-connection/* 
+          - arn:aws:ec2:*::snapshot/* 
+          - arn:aws:ec2:*:*:security-group/* 
+          - arn:aws:ec2:*:*:network-acl/* 
+          - arn:aws:ec2:*:*:network-interface/* 
+          - arn:aws:ec2:*:*:internet-gateway/* 
+          - arn:aws:ec2:*:*:capacity-reservation/* 
+          - arn:aws:ec2:*:*:route-table/* 
+          - arn:aws:ec2:*:*:dhcp-options/* 
+          - arn:aws:ec2:*::spot-instance-request/* 
+          - arn:aws:ec2:*:*:instance/* 
+          - arn:aws:ec2:*:*:transit-gateway/* 
+          - arn:aws:ec2:*:*:volume/* 
+          - arn:aws:ec2:*::fpga-image/* 
+          - arn:aws:ec2:*:*:vpc/* 
+          - arn:aws:ec2:*:*:transit-gateway-attachment/* 
+          - arn:aws:ec2:*::image/* 
+ 
+  EC2Super: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-SuperEC2
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: EC2EBSAllowAll 
+          Action: ec2:* 
+          Effect: Allow 
+          Resource: "*" 
+        - Effect: Allow 
+          Action: elasticloadbalancing:* 
+          Resource: "*" 
+        - Effect: Allow 
+          Action: cloudwatch:* 
+          Resource: "*" 
+        - Effect: Allow 
+          Action: autoscaling:* 
+          Resource: "*" 
+        - Effect: Allow 
+          Action: iam:CreateServiceLinkedRole 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              iam:AWSServiceName: 
+              - autoscaling.amazonaws.com 
+              - ec2scheduled.amazonaws.com 
+              - elasticloadbalancing.amazonaws.com 
+              - spot.amazonaws.com 
+              - spotfleet.amazonaws.com 
+              - transitgateway.amazonaws.com 
+ 
+  ## Kinesis Read-Write Managed Policy 
+  KinesisReadWrite: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-Kinesis
+      Path: !Ref PolicyPath      
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: KinesisAllowAll 
+          Effect: Allow 
+          Action: kinesis:* 
+          Resource: "*" 
+        - Sid: KinesisDenySuper 
+          Effect: Deny 
+          Action: 
+          - kinesis:Remove* 
+          - kinesis:Delete* 
+          Resource: "*" 
+ 
+  KinesisSuper: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-SuperKinesis
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: KinesisAllowAll 
+          Effect: Allow 
+          Action: kinesis:* 
+          Resource: "*" 
+ 
+  ##  Code Services Managed Policy 
+  CodeServiceReadWrite: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-CodeServices
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: DevOpsAllowAll 
+          Effect: Allow 
+          Action: 
+          - codecommit:* 
+          - codedeploy:* 
+          - codepipeline:* 
+          - codebuild:* 
+          Resource: "*" 
+        - Sid: DevOpsDenySuper 
+          Effect: Deny 
+          Action: 
+          - codecommit:Delete* 
+          - codepipeline:Delete* 
+          - codebuild:Delete* 
+          - codedeploy:Delete* 
+          - codedeploy:Remove* 
+          Resource: "*" 
+ 
+  CodeServiceSuper: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-SuperCodeServices
+      Path: !Ref PolicyPath      
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: DevOpsAllowAll 
+          Effect: Allow 
+          Action: 
+          - codecommit:* 
+          - codedeploy:* 
+          - codepipeline:* 
+          - codebuild:* 
+          Resource: "*" 
+ 
+  ##  RDS Managed Policy 
+  RDSReadWrite: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-RDS
+      Path: !Ref PolicyPath      
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: RDSAllowAll 
+          Effect: Allow 
+          Action: rds:* 
+          Resource: "*" 
+        - Effect: Allow 
+          Action: iam:CreateServiceLinkedRole 
+          Resource: "*" 
+          Condition: 
+            StringLike: 
+              iam:AWSServiceName: 
+                - rds.amazonaws.com 
+                - rds.application-autoscaling.amazonaws.com 
+        - Sid: RDSDenySuper 
+          Effect: Deny 
+          Action: 
+          - rds:Modify* 
+          - rds:Delete* 
+          - rds:Remove* 
+          Resource: "*" 
+ 
+  RDSSuper: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-SuperRDS
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: RDSAllowAll 
+          Effect: Allow 
+          Action: rds:* 
+          Resource: "*" 
+        - Effect: Allow 
+          Action: iam:CreateServiceLinkedRole 
+          Resource: "*" 
+          Condition: 
+            StringLike: 
+              iam:AWSServiceName: 
+                - rds.amazonaws.com 
+                - rds.application-autoscaling.amazonaws.com 
+                 
+  ##  APIGateWay Managed Policy 
+  APIGateWayReadWrite: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-APIGateWay
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: APIGatewayAllowAll 
+          Effect: Allow 
+          Action: apigateway:* 
+          Resource: arn:aws:apigateway:*::/* 
+        - Sid: APIGatewayDenySuper 
+          Effect: Deny 
+          Action: apigateway:Delete* 
+          Resource: "*" 
+ 
+  APIGateWaySuper: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-SuperAPIGateWay
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: APIGatewayAllowAll 
+          Effect: Allow 
+          Action: apigateway:* 
+          Resource: arn:aws:apigateway:*::/* 
+ 
+  ##  S3 Managed Policy 
+  ## To do: Need to review this policy with InfSec, 
+  ## S3 read write in Production environment may be prohibited 
+  S3ReadWrite: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-S3
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: S3AllowAll 
+          Effect: Allow 
+          Action: s3:* 
+          Resource: "*" 
+        - Sid: S3DenySuper 
+          Effect: Deny 
+          Action: 
+            - s3:PutBucketPolicy 
+            - s3:Delete* 
+          Resource: "*" 
+ 
+  S3Super: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-SuperS3
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: S3AllowAll 
+          Effect: Allow 
+          Action: s3:* 
+          Resource: "*" 
+ 
+  ##  GuardDuty Managed Policy 
+  GuardDutyReadWrite: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-GuardDuty
+      Path: !Ref PolicyPath      
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: GuardDutyAllowAll 
+          Effect: Allow 
+          Action: 
+          - guardduty:* 
+          Resource: "*" 
+        - Sid: GuardDutyDenySuper 
+          Effect: Deny 
+          Action: 
+          - guardduty:Delete* 
+          Resource: 
+          - arn:aws:guardduty:*:*:detector/*/ipset/* 
+          - arn:aws:guardduty:*:*:detector/*/threatintelset/* 
+          - arn:aws:guardduty:*:*:detector/* 
+ 
+  GuardDutySuper: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-SuperGuardDuty
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: GuardDutyAllowAll 
+          Effect: Allow 
+          Action: 
+          - guardduty:* 
+          Resource: "*" 
+ 
+  ##  DynamoDB Managed Policy 
+  DynamoDBReadWrite: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-DynamoDB
+      Path: !Ref PolicyPath      
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: DynamoDBAllowAll 
+          Effect: Allow 
+          Action: 
+          - dax:* 
+          - dynamodb:* 
+          Resource: "*" 
+        - Sid: DynamoDBDenySuper1 
+          Effect: Deny 
+          Action: dynamodb:DeleteBackup 
+          Resource: arn:aws:dynamodb:*:*:table/*/backup/* 
+        - Sid: DynamoDBDenySuper2 
+          Effect: Deny 
+          Action: 
+          - dynamodb:DeleteItem 
+          - dynamodb:DeleteTable 
+          Resource: arn:aws:dynamodb:*:*:table/* 
+ 
+  DynamoDBSuper: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-SuperDynamoDB
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: DynamoDBAllowAll 
+          Effect: Allow 
+          Action: 
+          - dax:* 
+          - dynamodb:* 
+          Resource: "*" 
+ 
+  ##  KMS Managed Policy 
+  KMSReadWrite: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-KMS
+      Path: !Ref PolicyPath      
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: KMSAllowAll 
+          Effect: Allow 
+          Action: 
+          - kms:* 
+          Resource: 
+          - arn:aws:kms:*:*:alias/* 
+          - arn:aws:kms:*:*:key/* 
+        - Sid: KMSDenySuper 
+          Effect: Deny 
+          Action: 
+          - kms:Delete* 
+          Resource: 
+          - arn:aws:kms:*:*:alias/* 
+          - arn:aws:kms:*:*:key/* 
+ 
+  KMSSuper: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-SuperKMS
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: KMSAllowAll 
+          Effect: Allow 
+          Action: 
+          - kms:* 
+          Resource: 
+          - arn:aws:kms:*:*:alias/* 
+          - arn:aws:kms:*:*:key/* 
+ 
+  ##  Lambda Managed Policy 
+  LambdaReadWrite: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-Lambda
+      Path: !Ref PolicyPath       
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: LambdaAllowAll 
+          Effect: Allow 
+          Action: 
+          - lambda:* 
+          Resource: "*" 
+        - Sid: LambdaDenySuper 
+          Effect: Deny 
+          Action: 
+          - lambda:Delete* 
+          Resource: 
+          - arn:aws:lambda:*:*:event-source-mapping:* 
+          - arn:aws:lambda:*:*:function:* 
+          - arn:aws:lambda:*:*:layer:*:* 
+ 
+  LambdaSuper: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-SuperLambda
+      Path: !Ref PolicyPath      
+      PolicyDocument: 
+        Version: '2012-10-17' 
+        Statement: 
+        - Sid: LambdaAllowAll 
+          Effect: Allow 
+          Action: 
+          - lambda:* 
+          Resource: "*" 
+ 
+# Adding Dev Ops policies 
+  DevOpsPolicy: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource"     
+    Properties: 
+      ManagedPolicyName: FirstAm-DevOps
+      Path: !Ref PolicyPath      
+      Description: 'This is interactive policy to create and modify resources' 
+      PolicyDocument: 
+        Version: "2012-10-17" 
+        Statement: 
+        ### Allow Write - EC2 / Volume and associated features 
+        - Sid: AllowEC2StackWrite 
+          Effect: Allow 
+          Action: 
+            - ec2:Describe* 
+            - ec2:GetPasswordData 
+            - ec2:AttachVolume 
+            - ec2:RebootInstances 
+            - ec2:CreateTags 
+            - ec2:ModifyInstanceEventStartTime 
+            - ec2:RunInstances 
+            - ec2:StopInstances 
+            - ec2:CreateLaunchTemplateVersion 
+            - ec2:CreateVolume 
+            - ec2:ModifySnapshotAttribute 
+            - ec2:StartInstances 
+            - ec2:CreateSnapshots 
+            - ec2:CreateSnapshot 
+            - ec2:ModifyLaunchTemplate 
+            - ec2:AssociateIamInstanceProfile 
+            - ec2:CopySnapshot 
+            - ec2:ModifyVolumeAttribute 
+            - ec2:ModifyNetworkInterfaceAttribute
+            - ec2:UnmonitorInstances 
+            - ec2:MonitorInstances 
+            - ec2:CreateKeyPair 
+            - ec2:CreateImage 
+            - ec2:PurchaseHostReservation 
+            - ec2:CopyImage 
+            - ec2:ReportInstanceStatus 
+            - ec2:ModifySpotFleetRequest 
+            - ec2:CreatePlacementGroup 
+            - ec2:UnassignPrivateIpAddresses 
+            - ec2:ImportImage 
+            - ec2:PurchaseScheduledInstances 
+            - ec2:ModifyVolume 
+            - ec2:ResetImageAttribute 
+            - ec2:CreateVpcEndpointConnectionNotification 
+            - ec2:BundleInstance 
+            - ec2:ImportKeyPair 
+            - ec2:RegisterImage 
+            - ec2:CreateFleet 
+            - ec2:AssignPrivateIpAddresses 
+            - ec2:ModifyHosts 
+            - ec2:EnableVolumeIO 
+            - ec2:CreateVpcEndpointServiceConfiguration 
+            - ec2:AssociateAddress 
+            - ec2:ModifyInstanceCapacityReservationAttributes 
+            - ec2:ImportVolume 
+            - ec2:RequestSpotInstances 
+            - ec2:ModifyFleet 
+            - ec2:RunScheduledInstances 
+            - ec2:RequestSpotFleet 
+            - ec2:ModifyImageAttribute 
+            - ec2:ModifyInstanceAttribute 
+            - ec2:CreateInstanceExportTask 
+            - ec2:ModifyInstancePlacement 
+            - ec2:ImportInstance 
+            - ec2:ModifyFpgaImageAttribute 
+            - ec2:ImportSnapshot 
+            - ec2:CopyFpgaImage 
+            - ec2:AllocateAddress 
+            - ec2:CreateLaunchTemplate 
+            - ec2:RestoreAddressToClassic 
+            - ec2:ModifyInstanceCreditSpecification 
+            - ec2:CreateVpcEndpoint 
+            - ec2:AllocateHosts 
+            - ec2:AttachNetworkInterface 
+            - ec2:ConfirmProductInstance 
+          Resource: "*" 
+        ### Allow Security Groups Write 
+        - Sid: AllowSecurityGroupsWrite 
+          Effect: Allow 
+          Action: 
+            - ec2:CreateSecurityGroup 
+            - ec2:AuthorizeSecurityGroupEgress 
+            - ec2:AuthorizeSecurityGroupIngress 
+            - ec2:UpdateSecurityGroupRuleDescriptionsEgress 
+            - ec2:RevokeSecurityGroupEgress 
+            - ec2:ApplySecurityGroupsToClientVpnTargetNetwork 
+            - ec2:UpdateSecurityGroupRuleDescriptionsIngress 
+          Resource: "*" 
+        ### Allow Write - S3 
+        - Sid: AllowS3Write 
+          Effect: Allow 
+          Action: 
+            - s3:CreateBucket 
+            - s3:Put* 
+            - s3:List* 
+            - s3:Get*             
+            - s3:Update*             
+          Resource: "*" 
+        ### Allow Write - CloudWatch 
+        - Sid: AllowCloudWatchWrite 
+          Effect: Allow 
+          Action: 
+            - logs:Create* 
+            - logs:CancelExportTask 
+            - logs:Put* 
+            - logs:StartQuery 
+            - logs:StopQuery 
+            - logs:TestMetricFilter 
+            - logs:GetLogEvents 
+            - logs:FilterLogEvents 
+            - logs:AssociateKmsKey 
+            - logs:DisassociateKmsKey 
+            - logs:TagLogGroup 
+            - logs:UpdateLogDelivery 
+            - logs:DescribeLogGroups 
+            - logs:DescribeLogStreams 
+          Resource: "*" 
+        ### Allow KMS Write 
+        - Sid: AllowKMSWrite 
+          Effect: Allow 
+          Action: 
+            - kms:GenerateRandom 
+            - kms:UpdateCustomKeyStore 
+            - kms:CreateKey 
+            - kms:DisconnectCustomKeyStore 
+            - kms:ConnectCustomKeyStore 
+            - kms:CreateCustomKeyStore 
+            - kms:EnableKeyRotation 
+            - kms:EnableKey 
+            - kms:ImportKeyMaterial 
+            - kms:Decrypt 
+            - kms:UpdateKeyDescription 
+            - kms:PutKeyPolicy 
+            - kms:GenerateDataKeyWithoutPlaintext 
+            - kms:ReEncryptFrom 
+            - kms:RetireGrant 
+            - kms:UpdateAlias 
+            - kms:Encrypt 
+            - kms:ScheduleKeyDeletion 
+            - kms:RevokeGrant 
+            - kms:GenerateDataKey 
+            - kms:CreateAlias 
+            - kms:ReEncryptTo 
+            - kms:CreateGrant 
+            - kms:ListAliases 
+            - kms:ListKeys 
+            - kms:DescribeKey 
+            - kms:TagResource 
+          Resource: "*" 
+        ### Allow ACM Write 
+        - Sid: AllowACMWrite 
+          Effect: Allow 
+          Action: 
+            - acm:RequestCertificate 
+            - acm:ResendValidationEmail 
+            - acm:UpdateCertificateOptions 
+            - acm:AddTagsToCertificate 
+            - acm:ImportCertificate 
+            - acm:RenewCertificate 
+          Resource: "*" 
+        ### Allow DynamoDB Write 
+        - Sid: AllowDynamoDBWrite 
+          Effect: Allow 
+          Action: 
+            - dynamodb:UpdateGlobalTableSettings 
+            - dynamodb:RestoreTableFromBackup 
+            - dynamodb:CreateGlobalTable 
+            - dynamodb:UpdateGlobalTable 
+            - dynamodb:UpdateTimeToLive 
+            - dynamodb:UntagResource 
+            - dynamodb:RestoreTableToPointInTime 
+            - dynamodb:UpdateGlobalTable 
+            - dynamodb:CreateBackup 
+            - dynamodb:UpdateContinuousBackups 
+            - dynamodb:CreateTable 
+            - dynamodb:UpdateGlobalTableSettings 
+            - dynamodb:TagResource 
+            - dynamodb:RestoreTableFromBackup 
+            - dynamodb:CreateGlobalTable 
+            - dynamodb:UpdateTable 
+            - dynamodb:Query 
+            - dynamodb:GetItem 
+            - dynamodb:PutItem 
+            - dynamodb:UpdateItem 
+            - dynamodb:BatchGetItem 
+            - dynamodb:BatchWriteItem 
+            - dynamodb:Scan 
+          Resource: "*" 
+        ### Additional services to Allow DataBase Migration Services Write 
+        - Sid: AddlAllowDMSWrite 
+          Effect: Allow 
+          Action: 
+            - iam:GetRole 
+            - cloudwatch:Get* 
+            - cloudwatch:ListDashboards 
+            - cloudwatch:ListMetrics  
+            - cloudwatch:DescribeAlarms 
+          Resource: "*"  
+        ### For DNS Management and Association with route53 
+        - Sid: AllowRoute53Write 
+          Effect: Allow 
+          Action: 
+            - route53:AssociateVPCWithHostedZone 
+            - route53:CreateVPCAssociationAuthorization 
+            - route53:UpdateHostedZoneComment 
+          Resource: "*" 
+        ### For Elastic Load Balancer  
+        - Sid: AllowELBWrite 
+          Effect: Allow 
+          Action: 
+            - elasticloadbalancing:Describe* 
+            - elasticloadbalancing:AddTags 
+            - elasticloadbalancing:CreateListener 
+            - elasticloadbalancing:ModifyListener 
+            - elasticloadbalancing:CreateLoadBalancer 
+            - elasticloadbalancing:ModifyLoadBalancerAttributes 
+            - elasticloadbalancing:CreateRule 
+            - elasticloadbalancing:ModifyRule 
+            - elasticloadbalancing:CreateTargetGroup 
+            - elasticloadbalancing:ModifyTargetGroupAttributes 
+            - elasticloadbalancing:RegisterTargets 
+            - elasticloadbalancing:Set*             # SetIpAddressType, SetRulePriorities, SetSecurityGroups, SetSubnets, SetWebAcl, SetLoadBalancerListenerSSLCertificate 
+            # Classic load balancer only 
+            - elasticloadbalancing:CreateLoadBalancerListeners 
+            - elasticloadbalancing:CreateLoadBalancerPolicy 
+            # SetLoadBalancerPoliciesForBackendServer, SetLoadBalancerPoliciesOfListener      
+            - elasticloadbalancing:AttachLoadBalancerToSubnets 
+            - elasticloadbalancing:ApplySecurityGroupsToLoadBalancer 
+            - elasticloadbalancing:RegisterInstancesWithLoadBalancer     
+            - elasticloadbalancing:EnableAvailabilityZonesForLoadBalancer 
+            - elasticloadbalancing:*CookieStickinessPolicy # CreateAppCookieStickinessPolicy, CreateLBCookieStickinessPolicy 
+          Resource: "*" 
+        ### SNS 
+        - Sid: AllowSNS 
+          Effect: Allow 
+          Action: 
+            - sns:Check* 
+            - sns:Create* 
+            - sns:Confirm* 
+            - sns:Get* 
+            - sns:List* 
+            - sns:Optin* 
+            - sns:Publish* 
+            - sns:Set* 
+            - sns:Subscribe* 
+            - sns:*Tag* 
+          Resource: "*" 
+ 
+  SuperDevOpsPolicy: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "IAM managed policy should not allow * action" 
+          - id: W28 
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource" 
+          - id: W13 
+            reason: "IAM policy should not allow * resource" 
+    Properties: 
+      ManagedPolicyName: FirstAm-SuperDevOps
+      Path: !Ref PolicyPath      
+      Description: 'Managed Policy with Delete permission for DevOps Role' 
+      PolicyDocument: 
+        Version: "2012-10-17" 
+        Statement: 
+        ### Allow Delete - EC2 / Volume and associated features 
+        - Sid: AllowEC2StackDelete 
+          Effect: Allow 
+          Action: 
+            - ec2:DetachVolume 
+            - ec2:DeleteLaunchTemplate 
+            - ec2:DeleteSnapshot 
+            - ec2:TerminateInstances 
+            - ec2:DeleteTags 
+            - ec2:DeleteVolume 
+            - ec2:DisassociateIamInstanceProfile 
+            - ec2:DeleteLaunchTemplateVersions 
+            - ec2:UnmonitorInstances 
+            - ec2:ResetInstanceAttribute 
+            - ec2:UnassignPrivateIpAddresses 
+            - ec2:ResetImageAttribute 
+            - ec2:DeleteKeyPair 
+            - ec2:DeleteSpotDatafeedSubscription 
+            - ec2:DisassociateAddress 
+            - ec2:DeregisterImage 
+            - ec2:DeleteFleets 
+            - ec2:ReleaseHosts 
+            - ec2:DeleteFpgaImage 
+            - ec2:ReleaseAddress 
+            - ec2:DeletePlacementGroup 
+            - ec2:ResetSnapshotAttribute 
+            - ec2:ResetFpgaImageAttribute 
+            - ec2:DeleteVpcEndpoints 
+            - ec2:DeleteVpcEndpointServiceConfigurations 
+            - ec2:DeleteVpcEndpointConnectionNotifications 
+          Resource: "*" 
+        ### Allow Security Groups Delete 
+        - Sid: AllowSecurityGroupsDelete 
+          Effect: Allow 
+          Action: 
+            - ec2:RevokeSecurityGroupIngress 
+            - ec2:RevokeSecurityGroupEgress 
+            - ec2:DeleteTags 
+            - ec2:DeleteSecurityGroup 
+          Resource: 
+            - arn:aws:ec2:*:*:security-group/* 
+ 
+        ### Allow Delete - ELB 
+        - Sid: AllowELBDelete 
+          Effect: Allow 
+          Action: 
+            - elasticloadbalancing:RemoveTags 
+            - elasticloadbalancing:DeleteListener     
+            - elasticloadbalancing:DeleteLoadBalancer 
+            - elasticloadbalancing:DeleteRule 
+            - elasticloadbalancing:DeleteTargetGroup 
+            - elasticloadbalancing:DeregisterTargets 
+            # Classic load balancer only 
+            - elasticloadbalancing:DeleteLoadBalancerListeners 
+            - elasticloadbalancing:DeleteLoadBalancerPolicy   
+            - elasticloadbalancing:DetachLoadBalancerFromSubnets 
+            - elasticloadbalancing:DeregisterInstancesFromLoadBalancer 
+            - elasticloadbalancing:DisableAvailabilityZonesForLoadBalancer 
+          Resource: "*" 
+ 
+        ### Allow Delete - S3 
+        - Sid: AllowS3Delete 
+          Effect: Allow 
+          Action: 
+            - s3:DeleteBucket* 
+            - s3:DeleteObject* 
+            - s3:Replicate* 
+            - s3:Restore* 
+          Resource: "*" 
+        ### Allow Delete - CloudWatch 
+        - Sid: AllowCloudWatchDelete 
+          Effect: Allow 
+          Action: 
+            - logs:Delete* 
+            - logs:UntagLogGroup            
+          Resource: "*" 
+        ### Allow KMS Delete 
+        - Sid: AllowKMSDelete 
+          Effect: Allow 
+          Action: 
+            - kms:DeleteCustomKeyStore 
+            - kms:CancelKeyDeletion 
+            - kms:DeleteImportedKeyMaterial 
+            - kms:DisableKey 
+            - kms:DisableKeyRotation 
+            - kms:DeleteAlias 
+            - kms:UntagResource 
+          Resource: "*" 
+        ### Allow ACM Delete 
+        - Sid: AllowACMDelete 
+          Effect: Allow 
+          Action: 
+            - acm:DeleteCertificate 
+            - acm:RemoveTagsFromCertificate 
+          Resource: "*" 
+        ### Allow DynamoDB Delete 
+        - Sid: AllowDynamoDBDelete 
+          Effect: Allow 
+          Action: 
+            - dynamodb:DeleteBackup 
+            - dynamodb:DeleteItem 
+            - dynamodb:DeleteTable 
+          Resource: "*" 
+        ### For DNS Management and Association with route53 
+        - Sid: AllowRoute53Delete 
+          Effect: Allow 
+          Action: 
+            - route53:DeleteVPCAssociationAuthorization 
+            - route53:DisassociateVPCFromHostedZone 
+          Resource: "*" 
+       ### SNS 
+        - Sid: AllowSNS 
+          Effect: Allow 
+          Action: 
+            - sns:Delete* 
+            - sns:Remove* 
+            - sns:Unsubscribe*           
+          Resource: "*" 
+       ### CloudFormation 
+        - Sid: AllowtestforPB 
+          Effect: Allow 
+          Action: 
+            - cloudformation:*           
+            - logs:*           
+            - cloudwatch:*           
+            - config:*           
+          Resource: "*" 
+       ### Support 
+        - Sid: AllowSupport 
+          Effect: Allow 
+          Action: 
+            - aws-portal:ViewBilling
+            - support:*
+            - resource-groups:* 
+          Resource: "*" 
+
+  GlobalRolePermissionsBoundary: 
+    Type: AWS::IAM::ManagedPolicy 
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: F5 
+            reason: "Explicit deny statements are in place to prevent access to CAVM tagged resources." 
+          - id: W28 
+            reason: "Policy is explicitly named to be named equally in all aws accounts." 
+          - id: W13 
+            reason: "Allow * resource as policy it will be used as a permissions boundary and CAVM tagged resources are explicitly denied."     
+          - id: W17 
+            reason: "Allow Not Action is used to simplify the as it will be used as a permissions boundary."
+          - id: F40
+            reason: "Allows * in passrole action. The explicit deny statement blocks from using any CAVM tagged iam resources"
+    Properties:
+      ManagedPolicyName: !Ref GlobalRolePermissionsBoundaryName
+      Path: !Ref PolicyPath      
+      Description: 'Development Permissions Boundary Policy for use in AWS account' 
+      PolicyDocument: 
+        Version: "2012-10-17" 
+        Statement: 
+        - Sid: AllowAllnotIAM 
+          Effect: Allow 
+          NotAction: "iam:*" 
+          Resource: "*" 
+        - Sid: IAMDenyCAVM 
+          Effect: Deny 
+          Action: "*" 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "iam:ResourceTag/AVMAccessLevel": "CAVM" 
+        - Sid: AWSDenyCAVMTagging 
+          Effect: Deny 
+          Action: "*" 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "aws:RequestTag/AVMAccessLevel":  
+                - "CAVM" 
+                - "CAVM-Read" 
+        - Sid: EC2DenyCAVM 
+          Effect: Deny 
+          Action: "*" 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "ec2:ResourceTag/AVMAccessLevel": "CAVM" 
+        - Sid: AWSDenyCAVM 
+          Effect: Deny 
+          Action: "*" 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "aws:ResourceTag/AVMAccessLevel": "CAVM"
+        - Sid: AllowIAM 
+          Effect: Allow 
+          Action: 
+            - iam:Get* 
+            - iam:List* 
+            - iam:TagRole 
+            - iam:UntagRole 
+            - iam:CreateInstanceProfile
+            - iam:*ServiceLinkedRole*
+            - iam:AddRoleToInstanceProfile 
+            - iam:RemoveRoleFromInstanceProfile 
+            - iam:UpdateRoleDescription 
+            - iam:PassRole 
+            - sts:AssumeRoleWithSAML 
+            - iam:CreatePolicy 
+            - iam:CreatePolicyVersion 
+            - iam:DeletePolicy 
+            - iam:DeleteRole             
+            - iam:DeletePolicyVersion 
+            - iam:DeleteInstanceProfile 
+            - iam:UpdateAssumeRolePolicy
+          Resource: "*" 
+        ### Allow IAM Privilege Access with Permissions Boundary 
+        - Sid: AllowIAMAccess 
+          Effect: Allow 
+          Action: 
+            - iam:CreateRole 
+            - iam:UpdateRole 
+            - iam:AttachRolePolicy 
+            - iam:DetachRolePolicy 
+            - iam:PutRolePolicy 
+            - iam:PutRolePermissionsBoundary 
+            - iam:DeleteRolePolicy  
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "iam:PermissionsBoundary": !Sub "arn:aws:iam::${AWS::AccountId}:policy${PolicyPath}${GlobalRolePermissionsBoundaryName}"
+        - Sid: AWSDenyCAVMSNS 
+          Effect: Deny 
+          Action: 
+            - sns:Confirm* 
+            - sns:Delete* 
+            - sns:*Permission* 
+            - sns:Publish* 
+            - sns:Set* 
+            - sns:Unsubscribe* 
+            - sns:Tag* 
+            - sns:Untag* 
+          Resource: 
+            - !Sub "arn:aws:sns:*:${AWS::AccountId}:required-tags-rule-sns-topic"
+        - Sid: NoCAVMPolicyEdit 
+          Effect: Deny 
+          Action:
+            - iam:CreatePolicy          
+            - iam:DeletePolicy
+            - iam:CreatePolicyVersion 
+            - iam:DeletePolicyVersion 
+            - iam:SetDefaultPolicyVersion 
+          Resource: !Sub "arn:aws:iam::${AWS::AccountId}:policy${PolicyPath}*"       
+        - Sid: AWSDenyCAVMLambdaFunctions 
+          Effect: Deny 
+          Action: "lambda:*" 
+          Resource: 
+            - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:awsi-*-cavm-*" 
+            - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:AWSI-*-CAVM-*" 
+            - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:DeleteDefaultVPC" 
+            - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:FirstAmSAMLSetup" 
+        - Sid: EC2DenyCAVMRead 
+          Effect: Deny 
+          NotAction: 
+            - ec2:Describe* 
+            - ec2:Get* 
+            - ec2:Search* 
+            - ec2:RunInstances 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "ec2:ResourceTag/AVMAccessLevel": "CAVM-Read" 
+        - Sid: IAMDenyCAVMRead 
+          Effect: Deny 
+          NotAction: 
+            - iam:Get* 
+            - iam:List* 
+            - iam:Simulate* 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "iam:ResourceTag/AVMAccessLevel": "CAVM-Read" 
+        - Sid: ConfigDenyCAVMRead 
+          Effect: Deny 
+          NotAction: 
+            - config:Describe* 
+            - config:*Get* 
+            - config:List* 
+            - config:SelectResourceConfig 
+            - config:StartConfigRulesEvaluation 
+          Resource: !Sub "arn:aws:config:*:${AWS::AccountId}:config-rule/*" 
+          Condition: 
+            StringEquals: 
+              "aws:ResourceTag/AVMAccessLevel": "CAVM-Read" 
+        - Sid: AWSDenyCloudwatch 
+          Effect: Deny 
+          NotAction:  
+            - cloudwatch:Describe* 
+            - cloudwatch:Get* 
+            - cloudwatch:List* 
+            - logs:Get* 
+            - logs:Describe* 
+            - logs:*Query 
+            - cloudtrail:Describe* 
+            - cloudtrail:Get* 
+            - cloudtrail:List* 
+            - cloudtrail:Lookup* 
+          Resource: 
+            - !Sub "arn:aws:events:*:${AWS::AccountId}:rule/awsi-p-1-cavm*:*" 
+            - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:*awsi-p-1*:*" 
+            - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:*AWSI-P-1*:*" 
+            - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/lambda/FirstAmSAMLSetup:*" 
+            - !Sub "arn:aws:cloudtrail:*:${AWS::AccountId}:trail/awsi-p-1-awsi-cloudtrail-central-trail" 
+        - Sid: DenyDefaultActions 
+          Effect: Deny 
+          Action: 
+            - aws-portal:Modify* 
+            - ec2:AssignIpv6Addresses 
+            - ec2:AttachInternetGateway 
+            - ec2:AttachVpnGateway 
+            - ec2:CreateCustomerGateway
+            - ec2:CreateDefaultSubnet
+            - ec2:CreateDefaultVpc
+            - !If 
+              - IsBasicAccount
+              - ec2:CreateSubnet
+              - !Ref AWS::NoValue
+            - !If 
+              - IsBasicAccount
+              - ec2:CreateVpc
+              - !Ref AWS::NoValue
+            - ec2:CreateRoute* # CreateRoute, CreateRouteTable
+            - ec2:Create*InternetGateway  # CreateInternetGateway, CreateEgressOnlyInternetGateway
+            - ec2:CreateNatGateway 
+            - ec2:CreateVpnConnection*  # CreateVpnConnection, CreateVpnConnectionRoute
+            - ec2:CreateVpnGateway
+            - !If 
+              - IsBasicAccount
+              - ec2:ModifySubnetAttribute
+              - !Ref AWS::NoValue
+            - ec2:CreateTransitGateway*
+            - ec2:PurchaseReservedInstancesOffering
+            - directconnect:* 
+            - guardduty:*
+            - iam:*user* 
+            - iam:deleteRolePermissionsBoundary 
+            - iam:deletesamlprovider 
+            - organizations:* 
+          Resource: "*" 
+ 
+Outputs: 
+  StackName: 
+      Description: Name of the current stack used for client CloudWatch Log Data Collection 
+      Value: !Ref 'AWS::StackName' 
+ 

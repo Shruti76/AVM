@@ -1,0 +1,138 @@
+# IAM Custom Roles Setup Template for the AMI Bakery Basic Account 265312162544 (Production AMI Bakery)
+---
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates IAM Roles, Groups and Polices for First American Organization Child Accounts
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks:
+        - W2001  # Ignore parameter not used warning
+
+Parameters:
+  # Setup
+  VersionNumber:
+    Type: String
+    Description: Enter the current deployment version number
+    Default: "1.0"
+
+  # Roles
+  NetworkOpsRoleName:
+    Type: String
+    Description: Enter the name for the Network Ops Role
+    Default: "FirstAm_network-ops"
+  AwsPowerUserRoleName:
+    Type: String
+    Description: Enter the name for break glass purpose.
+    Default: "FirstAm_bu-power-user"
+
+  ApplicationName:
+    Description: Application Name associated to application to pass in as parameter into child resources
+    Type: String
+  EnvironmentName:
+    Description: Environment Name for application to pass in as parameter into child resources
+    Type: String
+  ApplicationID:
+    Description: Application ID number for the associated application to pass in as parameter into child resources
+    Type: String
+    MaxLength: 10
+  AVMAccessLevel:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+  AVMAccessLevelRead:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+    Default: "CAVM-Read"
+
+Resources:
+  NetworkOps:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Standard name is explicitly set to be mapped with Azure AD."     
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref NetworkOpsRoleName
+      MaxSessionDuration: 28800
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/job-function/NetworkAdministrator
+
+  NetworkOpsRoleTags:
+    Type: "Custom::NetworkOpsRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref NetworkOps
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #---------------------------------------------------------------------------------------------- 
+  AwsPowerUser:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Standard name is explicitly set to be mapped with Azure AD."     
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref AwsPowerUserRoleName
+      MaxSessionDuration: 28800
+      ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/PowerUserAccess
+
+  AwsPowerUserRoleTags:
+    Type: "Custom::AwsPowerUserRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref AwsPowerUser
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #---------------------------------------------------------------------------------------------- 
+Outputs:
+  TemplateVersion:
+      Description: CodePipeline IAM Roles pipeline CloudFormation Template Version Number
+      Value: !Ref VersionNumber
+  StackName:
+      Description: Name of the current stack used for client CloudWatch Log Data Collection
+      Value: !Ref 'AWS::StackName'

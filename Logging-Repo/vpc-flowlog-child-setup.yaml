@@ -1,0 +1,269 @@
+Description:
+  VPC Flow Log for Member Security account setup  - this template will setup VPC flowlog and enable CloudWatch log group,
+  enable delivery of logs to destination in central account, and associated IAM roles & policies for VPC and CloudWatch.
+  (c) 2018 Amazon Web Services, Inc. or its affiliates. All Rights Reserved.
+  This AWS Content is provided subject to the terms of the AWS Customer Agreement
+  available at or other written agreement between Customer and Amazon Web Services, Inc.
+Parameters:
+  VersionNumber:
+    Type: String
+    Description: Enter the current deployment version number
+  VPCFlowlogCloudWatchRoleName:
+    Description: FA VPC Flowlog CloudWatch IAM Role name
+    Type: String
+    Default: "Local_awsi-p_vpc-flowlogs-cloudwatch-access"
+  VPCFlowlogsCloudWatchPolicy:
+    Description: FA VPC Flowlogs CloudWatch Policy
+    Type: String
+    Default: "Local_awsi-p_vpc-flowlogs-cloudwatch-access"
+  VPCFlowlogDestination:
+    Description: VPC FlowLogs Destination log
+    Type: String
+    Default: "awsi-p-1-awsi-vpc-flowlog-destination"
+  VPCFlowlogLogGroupName:
+    Description: VPC Flowlog Log group name, automatically adds the VPC ID suffix
+    Type: String
+    Default: "awsi-p-1-awsi-vpc-flowlog-loggroup"
+  FAAWSRegion:
+    Description: AWS Region where the Central Logging is setup
+    Type: String
+    Default: "us-west-2"
+  FAAWSAccountID:
+    Description: AWS AccountID where the Central Logging is setup
+    Type: String
+    Default: "539411578104"
+  1stVPCiD:
+    Type: String
+    Description: Enter the ID of 1st VPC to which VPC Flowlog needs to be enabled
+  2ndVPCiD:
+    Description: (If Available) Enter the ID of 2nd VPC to which VPC Flowlog needs to be enabled
+    Type: String
+  3rdVPCiD:
+    Description: (If Available) Enter the ID of 3rd VPC to which VPC Flowlog needs to be enabled
+    Type: String
+  4thVPCiD:
+    Description: (If Available) Enter the ID of 4th VPC to which VPC Flowlog needs to be enabled
+    Type: String
+Conditions:
+  1VPCCondition:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: 1stVPCiD
+      - ''
+  2VPCCondition:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: 2ndVPCiD
+      - ''
+  3VPCCondition:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: 3rdVPCiD
+      - ''
+  4VPCCondition:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: 4thVPCiD
+      - ''
+Resources:
+  FARolePublishVPCFlowLog:
+    Type: 'AWS::IAM::Role'
+    Properties:
+        Path: /
+        RoleName: !Ref VPCFlowlogCloudWatchRoleName
+        AssumeRolePolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              Sid: ""
+              Effect: Allow
+              Principal:
+                  Service: vpc-flow-logs.amazonaws.com
+              Action: 'sts:AssumeRole'
+  FAPolicyPermsVPCFlowLogs:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: !Ref VPCFlowlogsCloudWatchPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+              - 'logs:DescribeLogGroups'
+              - 'logs:DescribeLogStreams'
+            Resource: '*'
+      Roles:
+        - !Ref FARolePublishVPCFlowLog
+#1st VPC Flowlog setup and subcription to central destination
+  1FAVPCFlowlogLogGroup:
+    Condition: 1VPCCondition
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Join
+          - '-'
+          - - !Ref VPCFlowlogLogGroupName
+            - !Ref 1stVPCiD
+      RetentionInDays: 180
+  1FAVPCFlowlogs:
+    Condition: 1VPCCondition
+    DependsOn: 1FAVPCFlowlogLogGroup
+    Type: "AWS::EC2::FlowLog"
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt FARolePublishVPCFlowLog.Arn
+      LogGroupName: !Join
+          - '-'
+          - - !Ref VPCFlowlogLogGroupName
+            - !Ref 1stVPCiD
+      ResourceId: !Ref 1stVPCiD
+      ResourceType: VPC
+      TrafficType: ALL
+  1FACloudWatchKinesisSubscription:
+    Condition: 1VPCCondition
+    DependsOn: 1FAVPCFlowlogLogGroup
+    Type: "AWS::Logs::SubscriptionFilter"
+    Properties:
+      LogGroupName: !Join
+          - '-'
+          - - !Ref VPCFlowlogLogGroupName
+            - !Ref 1stVPCiD
+      FilterPattern: ''
+      DestinationArn: !Join
+          - ''
+          - - 'arn:aws:logs:'
+            - !Ref FAAWSRegion
+            - ':'
+            - !Ref FAAWSAccountID
+            - ':destination:'
+            - !Ref VPCFlowlogDestination
+#2nd VPC Flowlog setup and subcription to central destination
+  2FAVPCFlowlogLogGroup:
+    Condition: 2VPCCondition
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Join
+          - '-'
+          - - !Ref VPCFlowlogLogGroupName
+            - !Ref 2ndVPCiD
+      RetentionInDays: 180
+  2FAVPCFlowlogs:
+    Condition: 2VPCCondition
+    DependsOn: 2FAVPCFlowlogLogGroup
+    Type: "AWS::EC2::FlowLog"
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt FARolePublishVPCFlowLog.Arn
+      LogGroupName: !Join
+          - '-'
+          - - !Ref VPCFlowlogLogGroupName
+            - !Ref 2ndVPCiD
+      ResourceId: !Ref 2ndVPCiD
+      ResourceType: VPC
+      TrafficType: ALL
+  2FACloudWatchKinesisSubscription:
+    Condition: 2VPCCondition
+    DependsOn: 2FAVPCFlowlogLogGroup
+    Type: "AWS::Logs::SubscriptionFilter"
+    Properties:
+      LogGroupName: !Join
+          - '-'
+          - - !Ref VPCFlowlogLogGroupName
+            - !Ref 2ndVPCiD
+      FilterPattern: ''
+      DestinationArn: !Join
+          - ''
+          - - 'arn:aws:logs:'
+            - !Ref FAAWSRegion
+            - ':'
+            - !Ref FAAWSAccountID
+            - ':destination:'
+            - !Ref VPCFlowlogDestination
+#3rd VPC Flowlog setup and subcription to central destination
+  3FAVPCFlowlogLogGroup:
+    Condition: 3VPCCondition
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Join
+          - '-'
+          - - !Ref VPCFlowlogLogGroupName
+            - !Ref 3rdVPCiD
+      RetentionInDays: 180
+  3FAVPCFlowlogs:
+    Condition: 3VPCCondition
+    DependsOn: 3FAVPCFlowlogLogGroup
+    Type: "AWS::EC2::FlowLog"
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt FARolePublishVPCFlowLog.Arn
+      LogGroupName: !Join
+          - '-'
+          - - !Ref VPCFlowlogLogGroupName
+            - !Ref 3rdVPCiD
+      ResourceId: !Ref 3rdVPCiD
+      ResourceType: VPC
+      TrafficType: ALL
+  3FACloudWatchKinesisSubscription:
+    Condition: 3VPCCondition
+    DependsOn: 3FAVPCFlowlogLogGroup
+    Type: "AWS::Logs::SubscriptionFilter"
+    Properties:
+      LogGroupName: !Join
+          - '-'
+          - - !Ref VPCFlowlogLogGroupName
+            - !Ref 3rdVPCiD
+      FilterPattern: ''
+      DestinationArn: !Join
+          - ''
+          - - 'arn:aws:logs:'
+            - !Ref FAAWSRegion
+            - ':'
+            - !Ref FAAWSAccountID
+            - ':destination:'
+            - !Ref VPCFlowlogDestination
+#4th VPC Flowlog setup and subcription to central destination
+  4FAVPCFlowlogLogGroup:
+    Condition: 4VPCCondition
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Join
+          - '-'
+          - - !Ref VPCFlowlogLogGroupName
+            - !Ref 4thVPCiD
+      RetentionInDays: 180
+  4FAVPCFlowlogs:
+    Condition: 4VPCCondition
+    DependsOn: 4FAVPCFlowlogLogGroup
+    Type: "AWS::EC2::FlowLog"
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt FARolePublishVPCFlowLog.Arn
+      LogGroupName: !Join
+          - '-'
+          - - !Ref VPCFlowlogLogGroupName
+            - !Ref 4thVPCiD
+      ResourceId: !Ref 4thVPCiD
+      ResourceType: VPC
+      TrafficType: ALL
+  4FACloudWatchKinesisSubscription:
+    Condition: 4VPCCondition
+    DependsOn: 4FAVPCFlowlogLogGroup
+    Type: "AWS::Logs::SubscriptionFilter"
+    Properties:
+      LogGroupName: !Join
+          - '-'
+          - - !Ref VPCFlowlogLogGroupName
+            - !Ref 4thVPCiD
+      FilterPattern: ''
+      DestinationArn: !Join
+          - ''
+          - - 'arn:aws:logs:'
+            - !Ref FAAWSRegion
+            - ':'
+            - !Ref FAAWSAccountID
+            - ':destination:'
+            - !Ref VPCFlowlogDestination
+Outputs:
+  TemplateVersion:
+    Description: VPC Flow Log Client Account CloudFormation Template Version Number
+    Value: !Ref VersionNumber
+  StackName:
+    Description: Name of the current stack used for client VPC FlowLog Data Collection
+    Value: !Ref 'AWS::StackName'

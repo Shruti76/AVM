@@ -1,0 +1,578 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description:
+  VPC Child Deployment Pipeline  - this template will setup AWS CodePipeline for deleting Default VPCs accross all regions.
+
+Parameters:
+  BuildVersion:
+    Type: String
+    Description: Account Configuration Build Version to use
+  #Parameters used for tagging
+  #------------------------------------------------------------------------------------
+  EnvironmentName:
+    Type: String
+    Description: "Enter the environment of the account"
+  ApplicationName:
+    Type: String
+    Description: "Enter the application name of the account"
+  ApplicationID:
+    Type: String
+    Description: "Enter the Application ID of the applciation residing in the account"
+  AVMAccessLevel:
+    Type: String
+    Description: "Enter the access level"
+    Default: CAVM
+  #----------------------------------------------------------------------------------------------
+  VersionNumber:
+    Type: String
+    Description: Enter the current deployment version number
+    Default: "1.0"
+  ChildAccountID:
+    Description: AWS Account Number of the Central Logging Account
+    Type: String
+    MaxLength: 12
+    MinLength: 12
+    AllowedPattern: "[0-9]+"
+  AVMEnvironment:
+    Description:  Enter AVM Environment Type P,N,S 
+    Type: String
+  AVMAccountPrefix:
+    Description:  Enter AVM Account Prefix 
+    Type: String
+  AccountCategory:
+    Description: The purpose of the account. [Basic, Sandbox, Infrastructure, Logging]
+    Type: String
+    AllowedValues:
+      - Basic
+      - Sandbox
+      - Infrastructure
+      - Logging
+  DeleteDefaultVPCTemplatesPath:
+    Description: Path to template directory within lambda dir
+    Type: String
+    Default: "Lambda/DeleteDefaultVPC/Stack"
+  DeleteVPCTemplateFileName:
+    Description: Name of template to delete the default VPC from all regions
+    Type: String
+    Default: "avm-vpc-delete-default-all-regions.yaml"
+  ## Deployment Permissions
+  CloudFormationCrossAccountAccessRoleName:
+    Description: Name of the Pipeline CrossAccount access Role in the Child Account for CodePipeline to Assume
+    Type: String
+  CrossAccountCondition:
+    Description: Conditionally creates the resources for cross account access
+    Type: String
+    Default: true
+
+Conditions:
+  AddCrossAccountDeploy: !Equals [ !Ref CrossAccountCondition, true ]
+  IsBasicOrInfraAccount: !Or [!Equals [!Ref AccountCategory, 'Basic'], !Equals [!Ref AccountCategory, 'Infrastructure']]
+
+Resources:
+  LocalVariables1:
+    Type: "Custom::LocalVariables"
+    Properties:
+      ServiceToken: !ImportValue LocalVariables
+      Variables:
+        - Name: PrefixUpper
+          Value: '{{resolve:ssm:AVMAccountPrefix:1}}'
+          Function: ToUpper          
+  LocalVariables2:
+    Type: "Custom::LocalVariables"
+    Properties:
+      ServiceToken: !ImportValue LocalVariables
+      Variables:
+        - Name: PipelineName
+          Value: !Sub 
+            - "${accountSNR}-${accountEnv}-${accountNum}_CAVM_CP_BasicVPC-${ChildAccountID}"
+            - accountSNR: !Select [0, !Split ["-", !GetAtt 'LocalVariables1.PrefixUpper']]
+              accountEnv: !Select [1, !Split ["-", !GetAtt 'LocalVariables1.PrefixUpper']]
+              accountNum: !Select [2, !Split ["-", !GetAtt 'LocalVariables1.PrefixUpper']]            
+        - Name: PipelineNameBldPkg
+          Value: !Sub 
+            - "${accountSNR}-${accountEnv}-${accountNum}_CAVM_CP_BasicVPC-${ChildAccountID}-bld-pkg"
+            - accountSNR: !Select [0, !Split ["-", !GetAtt 'LocalVariables1.PrefixUpper']]
+              accountEnv: !Select [1, !Split ["-", !GetAtt 'LocalVariables1.PrefixUpper']]
+              accountNum: !Select [2, !Split ["-", !GetAtt 'LocalVariables1.PrefixUpper']]            
+        - Name: VPCDir
+          Value: "Account Vending Machine/AVM-Basic/VPC-Repo"
+#--------------------------------------------------------------
+# Access East region cloudformation exports
+  EastCFNExports:
+    Type: "Custom::UtilityFunction"
+    Properties:
+      ServiceToken: !ImportValue GetRegionCfnExport
+      TargetRegion: us-east-2
+
+#--------------------------------------------------------------
+
+## CODE BUILD
+  ## PIPELINE CODE
+  DeploymentPipeline:
+    Type: AWS::CodePipeline::Pipeline 
+    Properties:
+      RestartExecutionOnUpdate: true
+      ArtifactStores:
+        -
+          Region: us-west-2
+          ArtifactStore:
+            Type: S3
+            Location: !ImportValue ArtifactStoreBucketName
+            EncryptionKey:
+              Id:
+                Fn::ImportValue: AVMCMKArn
+              Type: KMS
+        -
+          Region: us-east-2
+          ArtifactStore:
+            Type: S3
+            Location: !GetAtt 'EastCFNExports.ArtifactStoreBucketName'
+            EncryptionKey: 
+              Id: !GetAtt 'EastCFNExports.AVMCMKArn'
+              Type: KMS
+      Name: !GetAtt 'LocalVariables2.PipelineName'
+      RoleArn:
+        Fn::ImportValue: AVMChildCodePipelineServiceRoleArn
+      Stages:
+      ## Stage: Source Code
+      - Name: GetSource
+        Actions:
+        - Name: GetSourceAction
+          ActionTypeId:
+            Category: Source
+            Owner: AWS
+            Version: '1'
+            Provider: S3
+          OutputArtifacts:
+            - Name: SourceOutput
+          Configuration:
+            S3Bucket: !ImportValue ArtifactStoreBucketName
+            S3ObjectKey: !Sub "${BuildVersion}/templates.zip" 
+            PollForSourceChanges: false
+          RunOrder: '1'
+
+      ## Generate Pipeline resource configurations STAGE
+      - Name: Pre-requisites
+        Actions:
+        - Name: ChildResourceConfigurationBuild
+          ActionTypeId:
+            Category: Build
+            Owner: AWS
+            Provider: CodeBuild
+            Version: '1'
+          Configuration:
+            ProjectName: !Ref ChildPipelineBuildProject
+          InputArtifacts:
+            - Name: SourceOutput
+          OutputArtifacts:
+            - Name: PipelineConfigOutput
+          RunOrder: '1'
+
+        - Name: pre-req-roles
+          InputArtifacts:
+            - Name: SourceOutput
+            - Name: PipelineConfigOutput
+          ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Version: '1'
+            Provider: CloudFormation
+          Configuration:
+            StackName: !Sub "${AVMAccountPrefix}-vpc-prereq-roles"
+            ActionMode: CREATE_UPDATE
+            Capabilities: CAPABILITY_NAMED_IAM
+            RoleArn: !Sub arn:aws:iam::${ChildAccountID}:role/Local_CAVM-${AVMEnvironment}_ChildIAMDeployment
+            TemplatePath: !Sub 
+              - "SourceOutput::${VPCDir}/pre-req-templates/pre-req-roles.yaml"
+              - VPCDir: !GetAtt 'LocalVariables2.VPCDir'
+            TemplateConfiguration: !Sub "PipelineConfigOutput::${ChildAccountID}-tag-configuration.json"
+            ParameterOverrides: !Sub
+              - |
+                {
+                  "InSpecRoleName" : "${AWS::AccountId}_CAVM-${AVMEnvironment}_vpc-resource-tester",
+                  "AVMAccountID" : "${AWS::AccountId}",
+                  "RolePath" : "/CAVM/"
+                }
+              - { AVMEnvironment: '{{resolve:ssm:AVMEnvironment:1}}' }        
+          RunOrder: 2
+          RoleArn: !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+
+        - Name: infra-account-roles
+          InputArtifacts:
+            - Name: SourceOutput
+            - Name: PipelineConfigOutput
+          ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Version: '1'
+            Provider: CloudFormation
+          Configuration:
+            StackName: !Sub 
+              - "${StackPrefix}-infra-account-roles-${ChildAccountID}"
+              - { StackPrefix: '{{resolve:ssm:AVMAccountPrefix:1}}' } 
+            ActionMode: CREATE_UPDATE
+            Capabilities: CAPABILITY_NAMED_IAM
+            RoleArn: !Sub
+              - arn:aws:iam::${InfrastructureAccountID}:role/Local_CAVM-${AVMEnvironment}_ChildIAMDeployment
+              - { InfrastructureAccountID: '{{resolve:ssm:InfrastructureAccountID:1}}' }
+            TemplatePath: !Sub 
+              - "SourceOutput::${VPCDir}/pre-req-templates/infra-account-roles.yaml"
+              - VPCDir: !GetAtt 'LocalVariables2.VPCDir'
+            TemplateConfiguration: !Sub "PipelineConfigOutput::${ChildAccountID}-tag-configuration.json"
+            ParameterOverrides: !Sub
+              - | 
+                {
+                  "ChildAccountID" : "${ChildAccountID}",
+                  "TGWAttachmentRoleName" : "${ChildAccountID}_CAVM-${AVMEnvironment}_TGWAttachmentRole",
+                  "RolePath" : "/CAVM/"
+                }
+              - { AVMEnvironment: '{{resolve:ssm:AVMEnvironment:1}}' }
+          RunOrder: 2
+          RoleArn: !Sub
+            - arn:aws:iam::${InfrastructureAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+            - { InfrastructureAccountID: '{{resolve:ssm:InfrastructureAccountID:1}}' } 
+
+      ## Stage: Deploy Delete Default VPC Lambda
+      - Name: LambdaFunctions
+        Actions:
+        - Name: DeleteDefaultVPC-LambdaFunction
+          InputArtifacts:
+            - Name: PipelineConfigOutput   
+            - Name: SourceOutput         
+          ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Version: '1'
+            Provider: CloudFormation
+          Configuration:
+            StackName: !Sub ${AVMAccountPrefix}-vpc-delete-default-all-regions
+            ActionMode: CREATE_UPDATE
+            Capabilities: CAPABILITY_NAMED_IAM
+            RoleArn:
+              Fn::If:
+                - AddCrossAccountDeploy
+                - !Sub arn:aws:iam::${ChildAccountID}:role/Local_CAVM-${AVMEnvironment}_VPCDeploy
+                - !Ref AWS::NoValue
+            TemplatePath: !Sub "SourceOutput::${DeleteDefaultVPCTemplatesPath}/deletedefaultvpc-lambda.yaml"
+            TemplateConfiguration: !Sub "PipelineConfigOutput::${ChildAccountID}-deletedefaultvpcconfig.json"
+            ParameterOverrides: !Sub
+              - |
+                {
+                  "S3Bucket" : "${S3BucketName}",
+                  "S3Key"  : "${BuildVersion}/DeleteDefaultVPC.zip"
+                }
+              - { S3BucketName: !ImportValue ArtifactStoreBucketName }
+          RunOrder: 1
+          RoleArn:
+            Fn::If:
+              - AddCrossAccountDeploy
+              - !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+              - !Ref AWS::NoValue
+
+        - Name: Deploy-Custom-Resource
+          InputArtifacts:
+            - Name: SourceOutput        
+            - Name: PipelineConfigOutput
+          ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Version: '1'
+            Provider: CloudFormation
+          Configuration:
+            StackName: !Sub ${AVMAccountPrefix}-customresource-deletedefaultvpc
+            ActionMode: CREATE_UPDATE
+            Capabilities: CAPABILITY_NAMED_IAM
+            RoleArn:
+              Fn::If:
+                - AddCrossAccountDeploy
+                - !Sub arn:aws:iam::${ChildAccountID}:role/Local_CAVM-${AVMEnvironment}_VPCDeploy
+                - !Ref AWS::NoValue
+            TemplatePath: !Sub 
+              - "SourceOutput::${VPCDir}/${DeleteVPCTemplateFileName}"
+              - VPCDir: !GetAtt 'LocalVariables2.VPCDir'
+            TemplateConfiguration: !Sub "PipelineConfigOutput::${ChildAccountID}-tag-configuration.json"
+          RunOrder: 2
+          RoleArn:
+            Fn::If:
+              - AddCrossAccountDeploy
+              - !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+              - !Ref AWS::NoValue
+
+        - Name: DeployTGWAttachmentResource-us-west-2
+          Region: us-west-2
+          InputArtifacts:  
+            - Name: SourceOutput         
+          ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Version: '1'
+            Provider: CloudFormation
+          Configuration:
+            StackName: !Sub 
+              - "${StackPrefix}-tgw-auto-attachment-resource"
+              - { StackPrefix: '{{resolve:ssm:AVMAccountPrefix:1}}' }               
+            ActionMode: CREATE_UPDATE
+            Capabilities: CAPABILITY_NAMED_IAM
+            RoleArn: !Sub arn:aws:iam::${ChildAccountID}:role/Local_CAVM-${AVMEnvironment}_VPCDeploy
+            TemplatePath: "SourceOutput::Lambda/TransitGatewayAutoAttachment/Stack/tgw-autoattachment.yaml"
+            TemplateConfiguration: !Sub "SourceOutput::Lambda/TransitGatewayAutoAttachment/Stack/tgw-autoattachment-config-${AVMEnvironment}.json"
+            ParameterOverrides: !Sub
+              - |
+                {
+                  "S3Bucket" : "${S3BucketName}",
+                  "S3Key"  : "${BuildVersion}/TransitGatewayAutoAttachment.zip",
+                  "InfraAccountRoleArn" : "arn:aws:iam::${InfrastructureAccountID}:role/CAVM/${ChildAccountID}_CAVM-${AVMEnvironment}_TGWAttachmentRole"
+                }
+              - { AVMEnvironment: '{{resolve:ssm:AVMEnvironment:1}}', InfrastructureAccountID: '{{resolve:ssm:InfrastructureAccountID:1}}', S3BucketName: !ImportValue ArtifactStoreBucketName }         
+          RunOrder: 1
+          RoleArn: !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+
+        - Name: DeployTGWAttachmentResource-us-east-2
+          Region: us-east-2
+          InputArtifacts:
+            - Name: SourceOutput         
+          ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Version: '1'
+            Provider: CloudFormation
+          Configuration:
+            StackName: !Sub 
+              - "${StackPrefix}-tgw-auto-attachment-resource"
+              - { StackPrefix: '{{resolve:ssm:AVMAccountPrefix:1}}' }               
+            ActionMode: CREATE_UPDATE
+            Capabilities: CAPABILITY_NAMED_IAM
+            RoleArn: !Sub arn:aws:iam::${ChildAccountID}:role/Local_CAVM-${AVMEnvironment}_VPCDeploy
+            TemplatePath: "SourceOutput::Lambda/TransitGatewayAutoAttachment/Stack/tgw-autoattachment.yaml"
+            TemplateConfiguration: !Sub "SourceOutput::Lambda/TransitGatewayAutoAttachment/Stack/tgw-autoattachment-config-${AVMEnvironment}.json"           
+            ParameterOverrides: !Sub
+              - |
+                {
+                  "S3Bucket" : "${S3BucketName}",
+                  "S3Key"  : "${BuildVersion}/TransitGatewayAutoAttachment.zip",
+                  "InfraAccountRoleArn" : "arn:aws:iam::${InfrastructureAccountID}:role/CAVM/${ChildAccountID}_CAVM-${AVMEnvironment}_TGWAttachmentRole"
+                }
+              - { AVMEnvironment: '{{resolve:ssm:AVMEnvironment:1}}', InfrastructureAccountID: '{{resolve:ssm:InfrastructureAccountID:1}}', S3BucketName: !GetAtt 'EastCFNExports.ArtifactStoreBucketName' }
+          RunOrder: 1
+          RoleArn: !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+
+      - Name: AutomatedTest
+        Actions:
+          - Name: Test
+            ActionTypeId:
+              Category: Test
+              Owner: AWS
+              Provider: CodeBuild
+              Version: 1
+            Configuration:
+              ProjectName: !Ref CodeBuildTestBuildProject
+              PrimarySource: SourceOutput
+            InputArtifacts:
+              - Name: SourceOutput
+              - Name: PipelineConfigOutput
+            RunOrder: 1
+      
+  #-----------------------------------------------------------------------
+  # Setting CodeBuild to Run pre-package pipeline buildspec  
+  ChildPipelineCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+      Path: /
+      RoleName: !GetAtt 'LocalVariables2.PipelineNameBldPkg' 
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents             
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Effect: Allow
+                Resource:
+                  - !Join ['',['arn:aws:s3:::',!ImportValue ArtifactStoreBucketName, '/*']]
+                  - !Join ['',['arn:aws:s3:::',!ImportValue ArtifactStoreBucketName]]
+              - Action:
+                  - kms:DescribeKey
+                  - kms:Decrypt
+                  - kms:Encrypt
+                  - kms:GenerateDataKey*
+                  - kms:ReEncrypt*
+                Effect: Allow
+                Resource:
+                  - !ImportValue AVMCMKArn
+            Version: '2012-10-17'
+          PolicyName: !GetAtt 'LocalVariables2.PipelineNameBldPkg' 
+
+  ChildPipelineBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Description: !Sub
+        - 'Project to pre-package child pipeline repo for ${PipelineName}'
+        - PipelineName: !GetAtt 'LocalVariables2.PipelineName'
+      EncryptionKey:
+        Fn::ImportValue: AVMCMKArn
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:2.0
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: ChildAccountID
+            Type: PLAINTEXT
+            Value: !Ref ChildAccountID                      
+          - Name: EnvironmentName
+            Type: PLAINTEXT
+            Value: !Ref EnvironmentName 
+          - Name: ApplicationName
+            Type: PLAINTEXT
+            Value: !Ref ApplicationName 
+          - Name: ApplicationID
+            Type: PLAINTEXT
+            Value: !Ref ApplicationID 
+          - Name: AVMAccessLevel
+            Type: PLAINTEXT
+            Value: !Ref AVMAccessLevel       
+      Name: !GetAtt 'LocalVariables2.PipelineNameBldPkg'
+      ServiceRole: !Ref ChildPipelineCodeBuildRole
+      Source:
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                java: openjdk11        
+            build:
+              commands:
+                - mkdir configs
+                - tagConfig="configs/${ChildAccountID}-tag-configuration.json"
+                - deletedefaultvpcconfig="configs/${ChildAccountID}-deletedefaultvpcconfig.json"
+                - jq -n --arg env "${EnvironmentName}" --arg appname "${ApplicationName}" --arg appid "${ApplicationID}" --arg accesslevel "${AVMAccessLevel}" '{"Tags":{"EnvironmentName":$env,"ApplicationName":$appname,"ApplicationID":$appid,"AVMAccessLevel":$accesslevel}}' > "$tagConfig"   
+                - jq -s '.[0] * .[1]' "$tagConfig" "$CODEBUILD_SRC_DIR/Lambda/DeleteDefaultVPC/Stack/deletedefaultvpc-configuration.json" > "$deletedefaultvpcconfig"
+          artifacts:
+            files:
+              - "**/*"
+            discard-paths: yes
+            base-directory: configs
+        Type: CODEPIPELINE
+
+#--------------------------------------------------------------------------------
+  # Code build for Inspec testing
+  CodeBuildTestRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+      Path: /CAVM/
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - sts:AssumeRole             
+                Effect: Allow
+                Resource: '*'            
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents             
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Effect: Allow
+                Resource:
+                  - !Join ['',['arn:aws:s3:::',!ImportValue ArtifactStoreBucketName, '/*']]
+                  - !Join ['',['arn:aws:s3:::',!ImportValue ArtifactStoreBucketName]]
+              - Action:
+                  - kms:DescribeKey
+                  - kms:Decrypt
+                  - kms:Encrypt
+                  - kms:GenerateDataKey*
+                  - kms:ReEncrypt*
+                Effect: Allow
+                Resource:
+                  - !ImportValue AVMCMKArn
+            Version: '2012-10-17'
+          PolicyName: inline
+      Tags:
+        - Key: AVMAccessLevel
+          Value: "CAVM"          
+
+  CodeBuildTestBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Description: !Sub 'Codebuild project to test vpc pipeline in ${ChildAccountID}'
+      EncryptionKey:
+        Fn::ImportValue: AVMCMKArn
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:2.0
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: CHILD_ACCOUNT_ID
+            Type: PLAINTEXT
+            Value: !Ref ChildAccountID                     
+          - Name: EnvironmentName
+            Type: PLAINTEXT
+            Value: !Ref EnvironmentName 
+          - Name: ApplicationName
+            Type: PLAINTEXT
+            Value: !Ref ApplicationName 
+          - Name: ApplicationID
+            Type: PLAINTEXT
+            Value: !Ref ApplicationID 
+          - Name: AVMAccessLevel
+            Type: PLAINTEXT
+            Value: !Ref AVMAccessLevel   
+          - Name: TargetAccountRoleArn
+            Type: PLAINTEXT
+            Value: !Sub "arn:aws:iam::${ChildAccountID}:role/CAVM/${AWS::AccountId}_CAVM-${AVMEnvironment}_vpc-resource-tester"
+          - Name: DELETEDEFAULTVPC_CONFIG_FILE_NAME
+            Type: PLAINTEXT
+            Value: !Sub "${ChildAccountID}-deletedefaultvpcconfig.json"
+          - !If
+            - IsBasicOrInfraAccount
+            - Name: TGWAUTOATTACHMENT_LAMBDA_CONFIG_FILE
+              Type: PLAINTEXT
+              Value: !Sub "Lambda/TransitGatewayAutoAttachment/Stack/tgw-autoattachment-config-${AVMEnvironment}.json"
+            - !Ref AWS::NoValue
+      ServiceRole: !GetAtt [CodeBuildTestRole, Arn]
+      Source:
+        BuildSpec: !If
+          - IsBasicOrInfraAccount
+          - 'Testing/CodeBuild_Profiles/VPC-InSpec/vpc-basic_buildspec.yaml'
+          - 'Testing/CodeBuild_Profiles/VPC-InSpec/vpc_buildspec.yaml'
+        Type: CODEPIPELINE
+
+  #-----------------------------------------------------------------------        
+
+Outputs:
+  DeploymentPipeline:
+    Value:
+      Ref: DeploymentPipeline
+    Description: The name of the deployment CodePipeline
+  TemplateVersion:
+      Description: CloudFormation Template Version Number
+      Value: !Ref VersionNumber
+  StackName:
+      Description: Name of the current stack used
+      Value: !Ref 'AWS::StackName'

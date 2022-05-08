@@ -1,0 +1,43 @@
+# Create detector and invite account as a member to the master guardduty setup. GuardDuty-Invite-Arn stack export value must be present.
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Enable GuardDuty service and attach to master guardduty account
+
+Parameters:
+  GuardDutyCrossAccountRole:
+    Description: Role name of the cross account role to assume in master account
+    Type: String
+  GuardDutyCrossAccountRolePath:
+    Description: Cross account role path
+    Type: String
+    Default: /CAVM/
+  MasterId:
+    Description: AWS Account ID of the guard duty master
+    Type: String
+  AccountEmail:
+    Description: AWS Account email address
+    Type: String
+  FindingPublishingFrequency:
+    Description: Enumeration value that specifies how frequently finding updates are published
+    Type: String
+    Default: SIX_HOURS
+    AllowedValues:
+      - FIFTEEN_MINUTES
+      - ONE_HOUR
+      - SIX_HOURS
+    
+Resources:
+  detector:
+      Type: AWS::GuardDuty::Detector
+      Properties:
+          Enable: True
+          FindingPublishingFrequency: !Ref FindingPublishingFrequency
+
+  InviteMember:
+    Type: "Custom::InviteMember"
+    Properties:
+      ServiceToken: !ImportValue 'GuardDuty-Invite-Arn'
+      GuardDutyCrossAccountRole: !Sub "arn:aws:iam::${MasterId}:role${GuardDutyCrossAccountRolePath}${GuardDutyCrossAccountRole}-${AWS::AccountId}"
+      MasterId: !Ref MasterId
+      MasterDetectorExportName: GuardDutyDetectorID
+      DetectorId: !Ref detector
+      AccountEmail: !Ref AccountEmail

@@ -1,0 +1,173 @@
+#  Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#  Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with
+#  the License. A copy of the License is located at
+#      http://aws.amazon.com/apache2.0/
+#  or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+#  CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and
+#  limitations under the License.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Set up the pre-req for CICD pipeline in AVM Basic Account
+Parameters:
+  VersionNumber:
+    Type: String
+    Description: Enter the current deployment version number
+  AVMPipelineSNSTopicName:
+    Description: SNS topic for sending pipeline notifications
+    Type: String
+    Default: "AWSI-P-1-CAVM_SNS_AVMNotification"
+  NotificationEmail:
+    Description: The email address where CodePipeline sends pipeline notifications
+    Type: String
+  IAMCodeCommitRepoName:
+    Description: Name of the CodeCommit repo
+    Type: String
+    Default: "AWSI-P-1-CAVM-BasicIAM" 
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9-]*"
+  LoggingCodeCommitRepoName:
+    Description: Name of the CodeCommit repo
+    Type: String
+    Default: "AWSI-P-1-CAVM-BasicLogging" 
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9-]*"
+  VPCCodeCommitRepoName:
+    Description: Name of the CodeCommit repo
+    Type: String
+    Default: "AWSI-P-1-CAVM-BasicVPC"
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9-]*"
+  ChildPipelineCodeCommitRepoName:
+    Description: Name of the CodeCommit repo
+    Type: String
+    Default: "AWSI-P-1-CAVM-BasicPipeline"
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9-]*"
+
+  RepositoryBranchName:
+    Description: The name of the branch for the CodeCommit repo
+    Type: String
+    Default: master
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9-]*"
+
+  # CodeCommitServiceRoleName:
+  #   Description: Name of the CodeCommit Role
+  #   Type: String
+  #   Default: "AVM-CodeCommit"  # "fa-avm-codecommit"
+  # CodeCommitServicePolicyName:
+  #   Description: Name of the CodeCommit Role Policy with least privilege permission for this deployment
+  #   Type: String
+  #   Default: "AVM-CodeCommit"  # "fa-avm-codecommit"
+
+Resources:
+
+  ##################################
+  #### CODE REPOS FOR TEMPLATES ####
+  ##################################
+
+  #Creates CodeCommit Repo for IAM related templates
+  IAMCodeCommitRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Ref IAMCodeCommitRepoName
+      RepositoryDescription: CodeCommit repository for managing IAM Repo
+      Triggers:
+      - Name: MasterTrigger
+        DestinationArn: !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${AVMPipelineSNSTopicName}
+        Branches:
+        - !Ref RepositoryBranchName
+        Events:
+        - all
+
+  #Creates CodeCommit Repo for Logging related templates
+  LoggingCodeCommitRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Ref LoggingCodeCommitRepoName
+      RepositoryDescription: CodeCommit repository for managing Logging Repo
+      Triggers:
+      - Name: MasterTrigger
+        DestinationArn: !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${AVMPipelineSNSTopicName}
+        Branches:
+        - !Ref RepositoryBranchName
+        Events:
+        - all
+
+  #Creates CodeCommit Repo for Child Pipeline related templates
+  ChildPipelineCodeCommitRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Ref ChildPipelineCodeCommitRepoName
+      RepositoryDescription: CodeCommit repository for managing Child Pipeline
+      Triggers:
+      - Name: MasterTrigger
+        DestinationArn: !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${AVMPipelineSNSTopicName}
+        Branches:
+        - !Ref RepositoryBranchName
+        Events:
+        - all
+
+  #Creates CodeCommit Repo for VPC related templates
+  VPCCodeCommitRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Ref VPCCodeCommitRepoName
+      RepositoryDescription: CodeCommit repository for managing VPC Repo
+      Triggers:
+      - Name: MasterTrigger
+        DestinationArn: !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${AVMPipelineSNSTopicName}
+        Branches:
+        - !Ref RepositoryBranchName
+        Events:
+        - all
+
+#### CODE COMMIT ROLES ###############
+### VALIDATE TO CHECK IF THIS REQUIRED AND WHERE USED
+
+  # CodeCommitServiceRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     RoleName: !Ref CodeCommitServiceRoleName
+  #     AssumeRolePolicyDocument:
+  #       Version: 2012-10-17
+  #       Statement:
+  #         -
+  #           Effect: Allow
+  #           Principal:
+  #             AWS:
+  #               - !Sub ${AWS::AccountId}
+  #           Action:
+  #             - sts:AssumeRole
+  #     Path: /
+  # CodeCommitServicePolicy:
+  #   Type: AWS::IAM::ManagedPolicy
+  #   Properties:
+  #     ManagedPolicyName: !Ref CodeCommitServicePolicyName
+  #     PolicyDocument:
+  #       Version: 2012-10-17
+  #       Statement:
+  #         -
+  #           Effect: Allow
+  #           Action:
+  #             - codecommit:BatchGetRepositories
+  #             - codecommit:Get*
+  #             - codecommit:GitPull
+  #             - codecommit:List*
+  #             - codecommit:CancelUploadArchive
+  #             - codecommit:UploadArchive
+  #           Resource: "*"
+  #         -
+  #           Effect: Allow
+  #           Action:
+  #             - s3:*
+  #           Resource: "*"
+  #     Roles:
+  #       -
+  #         !Ref CodeCommitServiceRole
+
+Outputs:
+  TemplateVersion:
+      Description: CodePipeline IAM Roles pipeline CloudFormation Template Version Number
+      Value: !Ref VersionNumber
+  StackName:
+      Description: Name of the current stack used
+      Value: !Ref 'AWS::StackName'
+  # CodeCommitServiceRole:
+  #     Description: CodeCommit Service Role Arn
+  #     Value: !GetAtt [CodeCommitServiceRole, Arn]

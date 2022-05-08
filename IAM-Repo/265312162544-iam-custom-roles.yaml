@@ -1,0 +1,462 @@
+# IAM Custom Roles Setup Template for the AMI Bakery Basic Account 265312162544 (Production AMI Bakery)
+---
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates IAM Roles, Groups and Polices for First American Organization Child Accounts
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks:
+        - W2001  # Ignore parameter not used warning
+
+Parameters:
+  # Setup
+  VersionNumber:
+    Type: String
+    Description: Enter the current deployment version number
+    Default: "1.0"
+
+  # Roles
+  PlatformLifecycleManagementRoleName:
+    Type: String
+    Description: Enter the name for the Platform Lifecyle Management Role
+    Default: "FirstAm_PlatformLifecycle"
+  SuperPlatformLifecycleManagementRoleName:
+    Type: String
+    Description: Enter the name for the Super Platform Lifecyle Management Role
+    Default: "FirstAm_SuperPlatformLifecycle"
+
+  ApplicationName:
+    Description: Application Name associated to application to pass in as parameter into child resources
+    Type: String
+  EnvironmentName:
+    Description: Environment Name for application to pass in as parameter into child resources
+    Type: String
+  ApplicationID:
+    Description: Application ID number for the associated application to pass in as parameter into child resources
+    Type: String
+    MaxLength: 10
+  AVMAccessLevel:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+  AVMAccessLevelRead:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+    Default: "CAVM-Read"
+
+Resources:
+  # Platform Lifecyle Management team - AMI Bakery
+  PlatformLifecycleManagement:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F38
+            reason: "Explicit deny statements in place to deny access to CAVM resources but policy needs to be revisited in the future."          
+          - id: W11
+            reason: "Explicit deny statements in place to deny access to CAVM resources but policy needs to be revisited in the future."
+          - id: W28
+            reason: "Standard name is explicitly set to be mapped with Azure AD."      
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref PlatformLifecycleManagementRoleName
+      MaxSessionDuration: 28800
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/job-function/SystemAdministrator
+        - arn:aws:iam::aws:policy/AWSLambdaReadOnlyAccess
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccesswithDataPipeline
+        - arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess
+        - arn:aws:iam::aws:policy/AmazonSSMFullAccess
+      Policies:
+        -
+          PolicyName: "PlatformLifecycleManagementPolicy"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - cloudformation:Create*
+              - cloudformation:describe*
+              - cloudformation:list*
+              # - codebuild:list*
+              Resource: "*"
+            - Effect: Allow
+              Action:
+              - iam:AttachRolePolicy
+              - iam:CreateRole
+              - iam:PassRole
+              - iam:PutRolePolicy
+              - ec2:CopyImage
+              - ec2:ModifyImageAttribute
+              - ec2:ModifySnapshotAttribute
+              - ec2:ResetImageAttribute
+              Resource: "*"
+            - Effect: Deny
+              Action: 
+              - aws-portal:Modify*
+              - aws-portal:View*
+              - cloudwatch:Delete*
+              - codebuild:BatchDeleteBuilds
+              - codebuild:Delete*
+              - codepipeline:Disable*
+              - codepipeline:Detach*
+              - codepipeline:Delete*
+              - ec2:Deregister*
+              - ec2:Delete*
+              - ec2:Detach*
+              - iam:DeleteRole
+              - lambda:Delete*
+              - s3:Delete*
+              - sns:Delete*
+              - sqs:Delete*
+              - ssm:Delete*
+              - ssm:Deregister*
+              - ssm:RemoveTagsFromResource
+              - logs:Delete*
+              - logs:UntagLogGroup
+              - ec2messages:DeleteMessage
+              Resource: "*"
+            - Sid: IAMDenyCAVM 
+              Effect: Deny 
+              Action: "*" 
+              Resource: "*" 
+              Condition: 
+                StringEquals: 
+                  "iam:ResourceTag/AVMAccessLevel": "CAVM" 
+            - Sid: IAMDenyCAVMRead 
+              Effect: Deny 
+              NotAction: 
+                - iam:Get* 
+                - iam:List* 
+                - iam:Simulate* 
+              Resource: "*" 
+              Condition: 
+                StringEquals: 
+                  "iam:ResourceTag/AVMAccessLevel": "CAVM-Read"               
+            - Sid: AWSDenyCAVMTagging 
+              Effect: Deny 
+              Action: "*" 
+              Resource: "*" 
+              Condition: 
+                StringEquals: 
+                  "aws:RequestTag/AVMAccessLevel":  
+                    - "CAVM" 
+                    - "CAVM-Read" 
+            - Sid: EC2DenyCAVM 
+              Effect: Deny 
+              Action: "*" 
+              Resource: "*" 
+              Condition: 
+                StringEquals: 
+                  "ec2:ResourceTag/AVMAccessLevel": "CAVM" 
+            - Sid: AWSDenyCAVM 
+              Effect: Deny 
+              Action: "*" 
+              Resource: "*" 
+              Condition: 
+                StringEquals: 
+                  "aws:ResourceTag/AVMAccessLevel": "CAVM"
+            - Sid: EC2DenyCAVMRead 
+              Effect: Deny 
+              NotAction: 
+                - ec2:Describe* 
+                - ec2:Get* 
+                - ec2:Search* 
+                - ec2:RunInstances 
+              Resource: "*" 
+              Condition: 
+                StringEquals: 
+                  "ec2:ResourceTag/AVMAccessLevel": "CAVM-Read" 
+            - Sid: ConfigDenyCAVMRead 
+              Effect: Deny 
+              NotAction: 
+                - config:Describe* 
+                - config:*Get* 
+                - config:List* 
+                - config:SelectResourceConfig 
+                - config:StartConfigRulesEvaluation 
+              Resource: !Sub "arn:aws:config:*:${AWS::AccountId}:config-rule/*" 
+              Condition: 
+                StringEquals: 
+                  "aws:ResourceTag/AVMAccessLevel": "CAVM-Read"
+            - Sid: AWSDenyCAVMLambdaFunctions 
+              Effect: Deny 
+              Action: "lambda:*" 
+              Resource: 
+                - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:awsi-*-cavm-*" 
+                - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:AWSI-*-CAVM-*" 
+                - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:DeleteDefaultVPC" 
+                - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:FirstAmSAMLSetup"
+            - Sid: AWSDenyCloudwatch 
+              Effect: Deny 
+              NotAction:  
+                - cloudwatch:Describe* 
+                - cloudwatch:Get* 
+                - cloudwatch:List* 
+                - logs:Get* 
+                - logs:Describe* 
+                - logs:*Query 
+                - cloudtrail:Describe* 
+                - cloudtrail:Get* 
+                - cloudtrail:List* 
+                - cloudtrail:Lookup* 
+              Resource: 
+                - !Sub "arn:aws:events:*:${AWS::AccountId}:rule/awsi-p-1-cavm*:*" 
+                - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:*awsi-p-1*:*" 
+                - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:*AWSI-P-1*:*" 
+                - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/lambda/FirstAmSAMLSetup:*" 
+                - !Sub "arn:aws:cloudtrail:*:${AWS::AccountId}:trail/awsi-p-1-awsi-cloudtrail-central-trail"
+                
+  PlatformLifecycleManagementRoleTags:
+    Type: "Custom::PlatformLifecycleManagementRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref PlatformLifecycleManagement
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #----------------------------------------------------------------------------------------------
+  SuperPlatformLifecycleManagement:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F3
+            reason: "Explicit deny statements in place to deny access to CAVM resources but policy needs to be revisited in the future."         
+          - id: F38
+            reason: "Explicit deny statements in place to deny access to CAVM resources but policy needs to be revisited in the future."          
+          - id: W11
+            reason: "Explicit deny statements in place to deny access to CAVM resources but policy needs to be revisited in the future."
+          - id: W28
+            reason: "Standard name is explicitly set to be mapped with Azure AD."     
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref SuperPlatformLifecycleManagementRoleName
+      MaxSessionDuration: 28800
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/job-function/SystemAdministrator
+        - arn:aws:iam::aws:policy/AWSLambdaFullAccess
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccesswithDataPipeline
+        - arn:aws:iam::aws:policy/AWSCodeBuildAdminAccess
+        - arn:aws:iam::aws:policy/AWSCodeDeployFullAccess
+        - arn:aws:iam::aws:policy/AWSCodeCommitFullAccess
+        - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+        - arn:aws:iam::aws:policy/AmazonSSMFullAccess
+      Policies:
+        -
+          PolicyName: "SuperPlatformLifecycleManagementPolicy"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - cloudformation:*
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - secretsmanager:Get*
+                - secretsmanager:List*
+                - secretsmanager:CreateSecret
+                - secretsmanager:UpdateSecret
+                - secretsmanager:DeleteSecret
+                - secretsmanager:DescribeSecret
+                - secretsmanager:RestoreSecret
+                - secretsmanager:Put*
+                - secretsmanager:*TagResource
+              Resource: "*"
+            - Effect: Allow
+              Action:
+              - iam:Get* 
+              - iam:List* 
+              - iam:TagRole 
+              - iam:UntagRole 
+              - iam:CreateInstanceProfile
+              - iam:*ServiceLinkedRole*
+              - iam:AddRoleToInstanceProfile 
+              - iam:RemoveRoleFromInstanceProfile 
+              - iam:UpdateRoleDescription 
+              - iam:PassRole 
+              - sts:AssumeRoleWithSAML 
+              - iam:CreatePolicy 
+              - iam:CreatePolicyVersion 
+              - iam:DeletePolicy 
+              - iam:DeleteRole             
+              - iam:DeletePolicyVersion 
+              - iam:DeleteInstanceProfile 
+              - iam:UpdateAssumeRolePolicy              
+              - iam:CreateRole 
+              - iam:UpdateRole 
+              - iam:AttachRolePolicy 
+              - iam:DetachRolePolicy 
+              - iam:PutRolePolicy 
+              - iam:PutRolePermissionsBoundary 
+              - iam:DeleteRolePolicy
+              - ec2:*
+              Resource: "*"
+            - Effect: Deny
+              Action: 
+              - aws-portal:Modify* 
+              - ec2:AssignIpv6Addresses 
+              - ec2:AttachInternetGateway 
+              - ec2:AttachVpnGateway 
+              - ec2:CreateCustomerGateway 
+              - ec2:Create*Subnet # CreateSubnet, CreateDefaultSubnet
+              - ec2:Create*Vpc    # CreateVpc, CreateDefaultVpc
+              - ec2:CreateRoute*  # CreateRoute, CreateRouteTable    
+              - ec2:Create*InternetGateway  # CreateInternetGateway, CreateEgressOnlyInternetGateway
+              - ec2:CreateNatGateway 
+              - ec2:CreateVpnConnection*  # CreateVpnConnection, CreateVpnConnectionRoute
+              - ec2:CreateVpnGateway 
+              - ec2:ModifySubnetAttribute
+              - ec2:CreateTransitGateway*
+              - ec2:PurchaseReservedInstancesOffering
+              - directconnect:* 
+              - iam:*user* 
+              - iam:deleteRolePermissionsBoundary 
+              - iam:deletesamlprovider 
+              - organizations:* 
+              Resource: "*"
+            - Sid: IAMDenyCAVM 
+              Effect: Deny 
+              Action: "*" 
+              Resource: "*" 
+              Condition: 
+                StringEquals: 
+                  "iam:ResourceTag/AVMAccessLevel": "CAVM" 
+            - Sid: IAMDenyCAVMRead 
+              Effect: Deny 
+              NotAction: 
+                - iam:Get* 
+                - iam:List* 
+                - iam:Simulate* 
+              Resource: "*" 
+              Condition: 
+                StringEquals: 
+                  "iam:ResourceTag/AVMAccessLevel": "CAVM-Read"               
+            - Sid: AWSDenyCAVMTagging 
+              Effect: Deny 
+              Action: "*" 
+              Resource: "*" 
+              Condition: 
+                StringEquals: 
+                  "aws:RequestTag/AVMAccessLevel":  
+                    - "CAVM" 
+                    - "CAVM-Read" 
+            - Sid: EC2DenyCAVM 
+              Effect: Deny 
+              Action: "*" 
+              Resource: "*" 
+              Condition: 
+                StringEquals: 
+                  "ec2:ResourceTag/AVMAccessLevel": "CAVM" 
+            - Sid: AWSDenyCAVM 
+              Effect: Deny 
+              Action: "*" 
+              Resource: "*" 
+              Condition: 
+                StringEquals: 
+                  "aws:ResourceTag/AVMAccessLevel": "CAVM"
+            - Sid: EC2DenyCAVMRead 
+              Effect: Deny 
+              NotAction: 
+                - ec2:Describe* 
+                - ec2:Get* 
+                - ec2:Search* 
+                - ec2:RunInstances 
+              Resource: "*" 
+              Condition: 
+                StringEquals: 
+                  "ec2:ResourceTag/AVMAccessLevel": "CAVM-Read" 
+            - Sid: ConfigDenyCAVMRead 
+              Effect: Deny 
+              NotAction: 
+                - config:Describe* 
+                - config:*Get* 
+                - config:List* 
+                - config:SelectResourceConfig 
+                - config:StartConfigRulesEvaluation 
+              Resource: !Sub "arn:aws:config:*:${AWS::AccountId}:config-rule/*" 
+              Condition: 
+                StringEquals: 
+                  "aws:ResourceTag/AVMAccessLevel": "CAVM-Read"
+            - Sid: AWSDenyCAVMLambdaFunctions 
+              Effect: Deny 
+              Action: "lambda:*" 
+              Resource: 
+                - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:awsi-*-cavm-*" 
+                - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:AWSI-*-CAVM-*" 
+                - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:DeleteDefaultVPC" 
+                - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:FirstAmSAMLSetup"
+            - Sid: AWSDenyCloudwatch 
+              Effect: Deny 
+              NotAction:  
+                - cloudwatch:Describe* 
+                - cloudwatch:Get* 
+                - cloudwatch:List* 
+                - logs:Get* 
+                - logs:Describe* 
+                - logs:*Query 
+                - cloudtrail:Describe* 
+                - cloudtrail:Get* 
+                - cloudtrail:List* 
+                - cloudtrail:Lookup* 
+              Resource: 
+                - !Sub "arn:aws:events:*:${AWS::AccountId}:rule/awsi-p-1-cavm*:*" 
+                - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:*awsi-p-1*:*" 
+                - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:*AWSI-P-1*:*" 
+                - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/lambda/FirstAmSAMLSetup:*" 
+                - !Sub "arn:aws:cloudtrail:*:${AWS::AccountId}:trail/awsi-p-1-awsi-cloudtrail-central-trail"  
+  SuperPlatformLifecycleManagementRoleTags:
+    Type: "Custom::SuperPlatformLifecycleManagementRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref SuperPlatformLifecycleManagement
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #----------------------------------------------------------------------------------------------
+Outputs:
+  TemplateVersion:
+      Description: CodePipeline IAM Roles pipeline CloudFormation Template Version Number
+      Value: !Ref VersionNumber
+  StackName:
+      Description: Name of the current stack used for client CloudWatch Log Data Collection
+      Value: !Ref 'AWS::StackName'

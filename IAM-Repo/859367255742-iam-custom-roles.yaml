@@ -1,0 +1,1195 @@
+# IAM Custom Roles Setup Template for the FAST Basic Account 859367255742.
+---
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates IAM Roles, Groups and Polices for First American Organization Child Accounts
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks:
+        - W2001  # Ignore parameter not used warning
+
+Parameters:
+  # Setup
+  VersionNumber:
+    Type: String
+    Description: Enter the current deployment version number
+    Default: "1.0"
+
+  # Roles
+  FirstamESSCN2InteractiveAccessRoleName:
+    Type: String
+    Description: Enter the name for the InteractiveAccess on FAST Account
+    Default: "Firstam_ESSC-N-2_InteractiveAccess"
+  FirstamESSCN2ProgrammaticAccessRoleName:
+    Type: String
+    Description: Enter the name for the ProgrammaticAccess on FAST Account
+    Default: "Firstam_ESSC-N-2_ProgrammaticAccess"
+  FirstamESSCN2SuperInteractiveAccessRoleName:
+    Type: String
+    Description: Enter the name for the SuperInteractiveAccess on FAST Account
+    Default: "Firstam_ESSC-N-2_SuperInteractive"
+
+  ApplicationName:
+    Description: Application Name associated to application to pass in as parameter into child resources
+    Type: String
+  EnvironmentName:
+    Description: Environment Name for application to pass in as parameter into child resources
+    Type: String
+  ApplicationID:
+    Description: Application ID number for the associated application to pass in as parameter into child resources
+    Type: String
+    MaxLength: 10
+  AVMAccessLevel:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+  AVMAccessLevelRead:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+    Default: "CAVM-Read"
+
+Resources:
+  # FAST team Interactive Access Role
+  FirstamESSCN2InteractiveAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref FirstamESSCN2InteractiveAccessRoleName
+      MaxSessionDuration: 28800
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/job-function/ViewOnlyAccess
+        - arn:aws:iam::aws:policy/AWSSupportAccess
+        - arn:aws:iam::aws:policy/AWSAccountActivityAccess     
+
+  FirstamESSCN2InteractiveAccessRoleTags:
+    Type: "Custom::FirstamESSCN2InteractiveAccessRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref FirstamESSCN2InteractiveAccessRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #-----------------------------------------------------------------------------------------------
+  # FAST team Super Interactive Access Role
+  FirstamESSCN2SuperInteractiveAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref FirstamESSCN2SuperInteractiveAccessRoleName
+      MaxSessionDuration: 28800
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/job-function/ViewOnlyAccess
+     
+
+  FirstamESSCN2SuperInteractiveAccessRoleTags:
+    Type: "Custom::FirstamESSCN2SuperInteractiveAccessRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref FirstamESSCN2SuperInteractiveAccessRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #----------------------------------------------------------------------------------------------
+  # FAST team Programmatic Access Role
+  FirstamESSCN2ProgrammaticAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Federated:
+            - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/AzureADSync
+          Action:
+          - sts:AssumeRoleWithSAML
+          Condition:
+            StringEquals:
+              SAML:aud: "https://signin.aws.amazon.com/saml"
+      RoleName: !Ref FirstamESSCN2ProgrammaticAccessRoleName
+      MaxSessionDuration: 28800
+
+  FirstamESSCN2ProgrammaticAccessRoleTags:
+    Type: "Custom::SuperPlatformLifecycleManagementRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref FirstamESSCN2ProgrammaticAccessRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+#IAM Managed Policy
+  DevOpsIAMPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: W13 
+            reason: "Explicit deny is in place to prevent access to CAVM tagged resources." 
+          - id: W28
+            reason: "Standard name is explicitly set." 
+          - id: F40
+            reason: "Explicit deny is in place to prevent access to CAVM tagged resources."    
+    Properties:
+      ManagedPolicyName: FirstAm_ESSC-N-2_DevOpsIAMPolicy
+      Description: 'Managed Policy that will be used by the DevOps Pipeline Role'
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        ### Allow IAM Basic Access
+        - Sid: AllowIAMBasicAccess
+          Effect: Allow
+          Action:
+            ### Read
+            - iam:Get*
+            - iam:List*
+            ### Tagging
+            - iam:TagRole
+            - iam:UntagRole
+            ### EC2 permission
+            - iam:CreateInstanceProfile
+            - iam:AddRoleToInstanceProfile
+            - iam:RemoveRoleFromInstanceProfile
+            ### Update Role info
+            - iam:UpdateRole
+            - iam:UpdateRoleDescription
+            ### Pass Role
+            - iam:PassRole
+            ### Delete Role
+            - iam:DeleteRole
+            ### Assume Role
+            - sts:AssumeRoleWithSAML
+            ### Create / Update / Delete Policy
+            - iam:CreatePolicy
+            - iam:DeletePolicy
+            - iam:CreatePolicyVersion
+            - iam:DeletePolicyVersion
+            - iam:DeleteInstanceProfile
+            - iam:UpdateAssumeRolePolicy                
+          Resource: "*"
+        ### Allow IAM Privilege Access with Permissions Boundary
+        - Sid: AllowIAMAccess
+          Effect: Allow
+          Action:
+            ### Create / Update Role
+            - iam:CreateRole
+            ### Attach Policy to Role
+            - iam:AttachRolePolicy
+            - iam:DetachRolePolicy
+            - iam:PutRolePolicy
+            - iam:PutRolePermissionsBoundary
+            - iam:DeleteRolePolicy 
+          Resource: "*"
+          Condition:
+            StringEquals:
+              "iam:PermissionsBoundary": !Ref SuperDevOpsRolePermissionBoundary
+        ### DevOps Pipeline or Enginner should not update the Permissions Boundary
+        - Sid: NoDevOpsPolicyEdit
+          Effect: Deny
+          Action:
+            - iam:DeletePolicy
+            - iam:CreatePolicy
+            - iam:CreatePolicyVersion
+            - iam:DeletePolicyVersion
+            - iam:SetDefaultPolicyVersion
+          Resource: 
+            - !Ref SuperDevOpsRolePermissionBoundary
+            - !Sub "arn:aws:iam::${AWS::AccountId}:policy/CAVM/*" 
+            - !Sub "arn:aws:iam::${AWS::AccountId}:policy/FirstAm_ESSC-N-2_DevOpsIAMPolicy"
+        ### DevOps Pipeline or Enginner to delete existing Permissions Boundary
+        - Sid: NoBoundaryRoleDelete
+          Effect: Deny
+          Action:
+            - iam:DeleteRolePermissionsBoundary
+          Resource: "*"
+        - Sid: IAMDenyCAVM 
+          Effect: Deny 
+          Action: "*" 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "iam:ResourceTag/AVMAccessLevel": "CAVM" 
+        - Sid: IAMDenyCAVMRead 
+          Effect: Deny 
+          NotAction: 
+            - iam:Get* 
+            - iam:List* 
+            - iam:Simulate* 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "iam:ResourceTag/AVMAccessLevel": "CAVM-Read"          
+      Roles:
+        - !Ref FirstamESSCN2InteractiveAccessRole
+        - !Ref FirstamESSCN2ProgrammaticAccessRole
+
+  ### This is interactive policy to create and modify resources
+  DevOpsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: W13 
+            reason: "Interactive policy as requested by the customer and approved." 
+          - id: W28
+            reason: "Standard name is explicitly set."   
+    Properties:
+      ManagedPolicyName: FirstAm_ESSC-N-2_DevOpsPolicy
+      Description: 'This is interactive policy to create and modify resources'
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        ### Allow Write - EC2 / Volume and associated features
+        - Sid: AllowEC2StackWrite
+          Effect: Allow
+          Action:
+            - ec2:Describe*
+            - ec2:AttachVolume
+            - ec2:RebootInstances
+            - ec2:CreateTags
+            - ec2:ModifyInstanceEventStartTime
+            - ec2:RunInstances
+            - ec2:StopInstances
+            - ec2:CreateLaunchTemplateVersion
+            - ec2:CreateVolume
+            - ec2:ModifySnapshotAttribute
+            - ec2:StartInstances
+            - ec2:CreateSnapshots
+            - ec2:CreateSnapshot
+            - ec2:ModifyLaunchTemplate
+            - ec2:AssociateIamInstanceProfile
+            - ec2:CopySnapshot
+            - ec2:ModifyVolumeAttribute
+            - ec2:UnmonitorInstances
+            - ec2:MonitorInstances
+            - ec2:CreateKeyPair
+            - ec2:CreateImage
+            - ec2:PurchaseHostReservation
+            - ec2:CopyImage
+            - ec2:ReportInstanceStatus
+            - ec2:ModifySpotFleetRequest
+            - ec2:CreatePlacementGroup
+            - ec2:UnassignPrivateIpAddresses
+            - ec2:ImportImage
+            - ec2:PurchaseScheduledInstances
+            - ec2:ModifyVolume
+            - ec2:ResetImageAttribute
+            - ec2:CreateVpcEndpointConnectionNotification
+            - ec2:BundleInstance
+            - ec2:ImportKeyPair
+            - ec2:RegisterImage
+            - ec2:CreateFleet
+            - ec2:AssignPrivateIpAddresses
+            - ec2:ModifyHosts
+            - ec2:EnableVolumeIO
+            - ec2:CreateVpcEndpointServiceConfiguration
+            - ec2:AssociateAddress
+            - ec2:ModifyInstanceCapacityReservationAttributes
+            - ec2:ImportVolume
+            - ec2:RequestSpotInstances
+            - ec2:ModifyFleet
+            - ec2:RunScheduledInstances
+            - ec2:RequestSpotFleet
+            - ec2:ModifyImageAttribute
+            - ec2:ModifyInstanceAttribute
+            - ec2:CreateInstanceExportTask
+            - ec2:ModifyInstancePlacement
+            - ec2:ImportInstance
+            - ec2:ModifyFpgaImageAttribute
+            - ec2:ImportSnapshot
+            - ec2:CopyFpgaImage
+            - ec2:AllocateAddress
+            - ec2:CreateLaunchTemplate
+            - ec2:RestoreAddressToClassic
+            - ec2:ModifyInstanceCreditSpecification
+            - ec2:CreateVpcEndpoint
+            - ec2:AllocateHosts
+            - ec2:AttachNetworkInterface
+            - ec2:ConfirmProductInstance
+          Resource: "*"
+        ### Allow Security Groups Write
+        - Sid: AllowSecurityGroupsWrite
+          Effect: Allow
+          Action:
+            - ec2:CreateSecurityGroup
+            - ec2:AuthorizeSecurityGroupEgress
+            - ec2:AuthorizeSecurityGroupIngress
+            - ec2:UpdateSecurityGroupRuleDescriptionsEgress
+            - ec2:RevokeSecurityGroupEgress
+            - ec2:ApplySecurityGroupsToClientVpnTargetNetwork
+            - ec2:UpdateSecurityGroupRuleDescriptionsIngress
+          Resource: "*"
+        ### Allow Write - S3
+        - Sid: AllowS3Write
+          Effect: Allow
+          Action:
+            - s3:CreateBucket
+            - s3:PutBucket*
+            - s3:Put*Configuration
+            - s3:List*
+            - s3:GetBucket*            
+          Resource: "*"
+        ### Allow Write - CloudWatch
+        - Sid: AllowCloudWatchWrite
+          Effect: Allow
+          Action:
+            - logs:Create*
+            - logs:CancelExportTask
+            - logs:Put*
+            - logs:StartQuery
+            - logs:StopQuery
+            - logs:TestMetricFilter
+            - logs:GetLogEvents
+            - logs:FilterLogEvents
+            - logs:AssociateKmsKey
+            - logs:DisassociateKmsKey
+            - logs:TagLogGroup
+            - logs:UpdateLogDelivery
+            - logs:DescribeLogGroups
+            - logs:DescribeLogStreams
+          Resource: "*"
+        ### Allow KMS Write
+        - Sid: AllowKMSWrite
+          Effect: Allow
+          Action:
+            - kms:GenerateRandom
+            - kms:UpdateCustomKeyStore
+            - kms:CreateKey
+            - kms:DisconnectCustomKeyStore
+            - kms:ConnectCustomKeyStore
+            - kms:CreateCustomKeyStore
+            - kms:EnableKeyRotation
+            - kms:EnableKey
+            - kms:ImportKeyMaterial
+            - kms:Decrypt
+            - kms:UpdateKeyDescription
+            - kms:PutKeyPolicy
+            - kms:GenerateDataKeyWithoutPlaintext
+            - kms:ReEncryptFrom
+            - kms:RetireGrant
+            - kms:UpdateAlias
+            - kms:Encrypt
+            - kms:ScheduleKeyDeletion
+            - kms:RevokeGrant
+            - kms:GenerateDataKey
+            - kms:CreateAlias
+            - kms:ReEncryptTo
+            - kms:CreateGrant
+            - kms:ListAliases
+            - kms:ListKeys
+            - kms:DescribeKey
+            - kms:TagResource
+          Resource: "*"
+        ### Allow ACM Write
+        - Sid: AllowACMWrite
+          Effect: Allow
+          Action:
+            - acm:RequestCertificate
+            - acm:ResendValidationEmail
+            - acm:UpdateCertificateOptions
+            - acm:AddTagsToCertificate
+            - acm:ImportCertificate
+            - acm:RenewCertificate
+          Resource: "*"
+        ### Allow DynamoDB Write
+        - Sid: AllowDynamoDBWrite
+          Effect: Allow
+          Action:
+            - dynamodb:UpdateGlobalTableSettings
+            - dynamodb:RestoreTableFromBackup
+            - dynamodb:CreateGlobalTable
+            - dynamodb:UpdateGlobalTable
+            - dynamodb:UpdateTimeToLive
+            - dynamodb:UntagResource
+            - dynamodb:RestoreTableToPointInTime
+            - dynamodb:UpdateGlobalTable
+            - dynamodb:CreateBackup
+            - dynamodb:UpdateContinuousBackups
+            - dynamodb:CreateTable
+            - dynamodb:UpdateGlobalTableSettings
+            - dynamodb:TagResource
+            - dynamodb:RestoreTableFromBackup
+            - dynamodb:CreateGlobalTable
+            - dynamodb:UpdateTable
+            - dynamodb:Query
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:BatchGetItem
+            - dynamodb:BatchWriteItem
+            - dynamodb:Scan
+          Resource: "*"
+        ### Allow Fsx Write
+        - Sid: AllowFsxWrite
+          Effect: Allow
+          Action:
+            - fsx:CreateFileSystem
+            - fsx:CreateBackup
+            - fsx:TagResource
+            - fsx:UpdateFileSystem
+            - fsx:CreateFileSystemFromBackup
+            - fsx:DescribeBackups
+            - fsx:DescribeFileSystems
+            - fsx:ListTagsForResource
+            - fsx:TagResource
+            - fsx:UpdateFileSystem
+          Resource: "*"
+        ### Allow DataSync Write
+        - Sid: AllowDataSyncWrite
+          Effect: Allow
+          Action:
+            - datasync:Create*           # CreateLocationS3 CreateTask  CreateLocationEfs  CreateLocationNfs CreateAgent
+            - datasync:Describe*         # DescribeLocationS3 DescribeTask DescribeLocationEfs DescribeLocationNfs DescribeAgent DescribeTaskExecution
+            - datasync:List*             # ListAgents ListLocations ListTagsForResource ListTaskExecutions ListTasks
+            - datasync:TagResource
+            - datasync:StartTaskExecution
+            - datasync:Update*           # UpdateAgent UpdateTask
+          Resource: "*"
+        ### Allow DataBase Migration Services Write
+        - Sid: AllowDMSWrite
+          Effect: Allow
+          Action:
+            - dms:AddTagsToResource
+            - dms:CreateEndpoint
+            - dms:CreateReplicationInstance
+            - dms:CreateReplicationTask
+            - dms:Describe*
+            - dms:ListTagsForResource
+            - dms:ModifyEndpoint
+            - dms:ModifyEventSubscription
+            - dms:ModifyReplicationInstance
+            - dms:ModifyReplicationTask
+            - dms:RefreshSchemas
+            - dms:StartReplicationTask
+            - dms:StopReplicationTask
+            - dms:TestConnection
+          Resource: "*"
+        ### Additional services to Allow DataBase Migration Services Write
+        - Sid: AddlAllowDMSWrite
+          Effect: Allow
+          Action:
+            - iam:GetRole
+            - cloudwatch:Get*
+            - cloudwatch:ListDashboards
+            - cloudwatch:ListMetrics 
+            - cloudwatch:DescribeAlarms
+          Resource: "*"
+  
+        ### For DNS Management and Association with route53
+        - Sid: AllowRoute53Write
+          Effect: Allow
+          Action:
+            - route53:AssociateVPCWithHostedZone
+            - route53:CreateVPCAssociationAuthorization
+            - route53:UpdateHostedZoneComment
+          Resource: "*"
+        - Sid: NoDevOpsPolicyEdit
+          Effect: Deny
+          Action:
+            - iam:DeletePolicy
+            - iam:CreatePolicyVersion
+            - iam:DeletePolicyVersion
+            - iam:SetDefaultPolicyVersion
+          Resource:
+            - !Sub "arn:aws:iam::${AWS::AccountId}:policy/FirstAm_ESSC-N-2_DevOpsPolicy"            
+      Roles:
+        # Roles used by DevOpsPolicy
+        - !Ref  FirstamESSCN2InteractiveAccessRole
+        - !Ref  FirstamESSCN2SuperInteractiveAccessRole
+
+  # Policy where there was not enough space to fit
+  DevOpsOverflowPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: W13 
+            reason: "Explicit deny is in place to prevent access to CAVM tagged resources." 
+          - id: W28
+            reason: "Standard name is explicitly set." 
+          - id: F40
+            reason: "Explicit deny is in place to prevent access to CAVM tagged resources."      
+    Properties:
+      ManagedPolicyName: FirstAm_ESSC-N-2_DevOpsIAMPolicy_Overflow
+      Description: 'Managed Policy that will be used by the DevOps Human access. Overflow permissions'
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Sid: AllowELBWrite
+          Effect: Allow
+          Action:
+            - elasticloadbalancing:Describe*
+            - elasticloadbalancing:AddTags
+            - elasticloadbalancing:CreateListener
+            - elasticloadbalancing:ModifyListener
+            - elasticloadbalancing:CreateLoadBalancer
+            - elasticloadbalancing:ModifyLoadBalancerAttributes
+            - elasticloadbalancing:CreateRule
+            - elasticloadbalancing:ModifyRule
+            - elasticloadbalancing:CreateTargetGroup
+            - elasticloadbalancing:ModifyTargetGroupAttributes
+            - elasticloadbalancing:RegisterTargets
+            - elasticloadbalancing:Set*             # SetIpAddressType, SetRulePriorities, SetSecurityGroups, SetSubnets, SetWebAcl, SetLoadBalancerListenerSSLCertificate
+            
+            # Classic load balancer only
+            - elasticloadbalancing:CreateLoadBalancerListeners
+            - elasticloadbalancing:CreateLoadBalancerPolicy
+            # SetLoadBalancerPoliciesForBackendServer, SetLoadBalancerPoliciesOfListener     
+            - elasticloadbalancing:AttachLoadBalancerToSubnets
+            - elasticloadbalancing:ApplySecurityGroupsToLoadBalancer
+            - elasticloadbalancing:RegisterInstancesWithLoadBalancer    
+            - elasticloadbalancing:EnableAvailabilityZonesForLoadBalancer
+            - elasticloadbalancing:*CookieStickinessPolicy # CreateAppCookieStickinessPolicy, CreateLBCookieStickinessPolicy
+          Resource: "*"
+
+        - Sid: AllowRDSReadWrite
+          Effect: Allow
+          Action:
+            - rds:Describe*
+            - rds:AddTagsToResource
+            - rds:CreateEventSubscription
+            - rds:StopDBInstance
+            - rds:CreateDBSubnetGroup
+            - rds:StartDBInstance
+            - rds:AddRoleToDBInstance
+            - rds:RebootDBInstance
+            - rds:CreateDBInstance
+            - rds:ModifyDBInstance
+            - rds:RemoveTagsFromResource
+            - rds:CreateDBInstanceReadReplica
+          Resource: "*"
+
+        - Sid: AWSDenyCAVMTagging 
+          Effect: Deny 
+          Action: "*" 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "aws:RequestTag/AVMAccessLevel":  
+                - "CAVM" 
+                - "CAVM-Read" 
+        - Sid: EC2DenyCAVM 
+          Effect: Deny 
+          Action: "*" 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "ec2:ResourceTag/AVMAccessLevel": "CAVM" 
+        - Sid: AWSDenyCAVM 
+          Effect: Deny 
+          Action: "*" 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "aws:ResourceTag/AVMAccessLevel": "CAVM"
+        - Sid: EC2DenyCAVMRead 
+          Effect: Deny 
+          NotAction: 
+            - ec2:Describe* 
+            - ec2:Get* 
+            - ec2:Search* 
+            - ec2:RunInstances 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "ec2:ResourceTag/AVMAccessLevel": "CAVM-Read" 
+        - Sid: ConfigDenyCAVMRead 
+          Effect: Deny 
+          NotAction: 
+            - config:Describe* 
+            - config:*Get* 
+            - config:List* 
+            - config:SelectResourceConfig 
+            - config:StartConfigRulesEvaluation 
+          Resource: !Sub "arn:aws:config:*:${AWS::AccountId}:config-rule/*" 
+          Condition: 
+            StringEquals: 
+              "aws:ResourceTag/AVMAccessLevel": "CAVM-Read"
+        - Sid: AWSDenyCAVMLambdaFunctions 
+          Effect: Deny 
+          Action: "lambda:*" 
+          Resource: 
+            - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:awsi-*-cavm-*" 
+            - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:AWSI-*-CAVM-*" 
+            - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:DeleteDefaultVPC" 
+            - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:FirstAmSAMLSetup"
+        - Sid: AWSDenyCloudwatch 
+          Effect: Deny 
+          NotAction:  
+            - cloudwatch:Describe* 
+            - cloudwatch:Get* 
+            - cloudwatch:List* 
+            - logs:Get* 
+            - logs:Describe* 
+            - logs:*Query 
+            - cloudtrail:Describe* 
+            - cloudtrail:Get* 
+            - cloudtrail:List* 
+            - cloudtrail:Lookup* 
+          Resource: 
+            - !Sub "arn:aws:events:*:${AWS::AccountId}:rule/awsi-p-1-cavm*:*" 
+            - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:*awsi-p-1*:*" 
+            - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:*AWSI-P-1*:*" 
+            - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/lambda/FirstAmSAMLSetup:*" 
+            - !Sub "arn:aws:cloudtrail:*:${AWS::AccountId}:trail/awsi-p-1-awsi-cloudtrail-central-trail"
+        - Sid: NoDevOpsPolicyEdit
+          Effect: Deny
+          Action:
+            - iam:DeletePolicy
+            - iam:CreatePolicyVersion
+            - iam:DeletePolicyVersion
+            - iam:SetDefaultPolicyVersion
+          Resource:
+            - !Sub "arn:aws:iam::${AWS::AccountId}:policy/FirstAm_ESSC-N-2_DevOpsIAMPolicy_Overflow"                          
+      Roles:
+        - !Ref  FirstamESSCN2InteractiveAccessRole
+        - !Ref  FirstamESSCN2SuperInteractiveAccessRole
+
+  ### IAM Managed Policy for DevOps Pipeline
+  SuperDevOpsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: FirstAm_ESSC-N-2_SuperDevOpsPolicy
+      Description: 'Managed Policy with Delete permission for DevOps Role'
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        ### Allow Delete - EC2 / Volume and associated features
+        - Sid: AllowEC2StackDelete
+          Effect: Allow
+          Action:
+            - ec2:DetachVolume
+            - ec2:DeleteLaunchTemplate
+            - ec2:DeleteSnapshot
+            - ec2:TerminateInstances
+            - ec2:DeleteTags
+            - ec2:DeleteVolume
+            - ec2:DisassociateIamInstanceProfile
+            - ec2:DeleteLaunchTemplateVersions
+            - ec2:UnmonitorInstances
+            - ec2:ResetInstanceAttribute
+            - ec2:UnassignPrivateIpAddresses
+            - ec2:ResetImageAttribute
+            - ec2:DeleteKeyPair
+            - ec2:DeleteSpotDatafeedSubscription
+            - ec2:DisassociateAddress
+            - ec2:DeregisterImage
+            - ec2:DeleteFleets
+            - ec2:ReleaseHosts
+            - ec2:DeleteFpgaImage
+            - ec2:ReleaseAddress
+            - ec2:DeletePlacementGroup
+            - ec2:ResetSnapshotAttribute
+            - ec2:ResetFpgaImageAttribute
+            - ec2:DeleteVpcEndpoints
+            - ec2:DeleteVpcEndpointServiceConfigurations
+            - ec2:DeleteVpcEndpointConnectionNotifications
+          Resource: "*"
+        ### Allow Security Groups Delete
+        - Sid: AllowSecurityGroupsDelete
+          Effect: Allow
+          Action:
+            - ec2:RevokeSecurityGroupIngress
+            - ec2:RevokeSecurityGroupEgress
+            - ec2:DeleteTags
+            - ec2:DeleteSecurityGroup
+          Resource:
+            - arn:aws:ec2:*:*:security-group/*
+
+        - Sid: AllowELBWrite
+          Effect: Allow
+          Action:
+            - elasticloadbalancing:RemoveTags
+            - elasticloadbalancing:DeleteListener    
+            - elasticloadbalancing:DeleteLoadBalancer
+            - elasticloadbalancing:DeleteRule
+            - elasticloadbalancing:DeleteTargetGroup
+            - elasticloadbalancing:DeregisterTargets
+
+            # Classic load balancer only
+            - elasticloadbalancing:DeleteLoadBalancerListeners
+            - elasticloadbalancing:DeleteLoadBalancerPolicy  
+            - elasticloadbalancing:DetachLoadBalancerFromSubnets
+            - elasticloadbalancing:DeregisterInstancesFromLoadBalancer
+            - elasticloadbalancing:DisableAvailabilityZonesForLoadBalancer
+          Resource: "*"
+
+        ### Allow Delete - S3
+        - Sid: AllowS3Delete
+          Effect: Allow
+          Action:
+            - s3:DeleteBucket*
+          Resource: "*"
+        ### Allow Delete - CloudWatch
+        - Sid: AllowCloudWatchDelete
+          Effect: Allow
+          Action:
+            - logs:Delete*
+            - logs:UntagLogGroup           
+          Resource: "*"
+        ### Allow KMS Delete
+        - Sid: AllowKMSDelete
+          Effect: Allow
+          Action:
+            - kms:DeleteCustomKeyStore
+            - kms:CancelKeyDeletion
+            - kms:DeleteImportedKeyMaterial
+            - kms:DisableKey
+            - kms:DisableKeyRotation
+            - kms:DeleteAlias
+            - kms:UntagResource
+          Resource: "*"
+        ### Allow ACM Delete
+        - Sid: AllowACMDelete
+          Effect: Allow
+          Action:
+            - acm:DeleteCertificate
+            - acm:RemoveTagsFromCertificate
+          Resource: "*"
+        ### Allow DynamoDB Delete
+        - Sid: AllowDynamoDBDelete
+          Effect: Allow
+          Action:
+            - dynamodb:DeleteBackup
+            - dynamodb:DeleteItem
+            - dynamodb:DeleteTable
+          Resource: "*"
+        ### Allow Fsx Delete
+        - Sid: AllowFsxDelete
+          Effect: Allow
+          Action:
+            - fsx:DeleteBackup
+            - fsx:UntagResource
+            - fsx:DeleteFileSystem
+            - fsx:DeleteBackup
+            - fsx:DeleteFileSystem
+            - fsx:UntagResource
+          Resource: "*"
+        ### Allow DataSync Write
+        - Sid: AllowDataSyncDelete
+          Effect: Allow
+          Action:
+            - datasync:Delete*      # DeleteTask  DeleteAgent DeleteLocation
+            - datasync:CancelTaskExecution
+            - datasync:UntagResource 
+          Resource: "*"
+        ### Allow DMS Delete
+        - Sid: AllowDMSDelete
+          Effect: Allow
+          Action:
+            - dms:DeleteEndpoint
+            - dms:DeleteEventSubscription
+            - dms:DeleteReplicationInstance
+            - dms:DeleteReplicationTask
+            - dms:RemoveTagsFromResource
+          Resource: "*"
+
+        - Sid: AllowRDSReadWriteDelete
+          Effect: Allow
+          Action:
+            - rds:DeleteDBSubnetGroup
+            - rds:DeleteEventSubscription
+            - rds:DeleteDBInstance
+          Resource: "*"
+        ### For DNS Management and Association with route53
+        - Sid: AllowRoute53Delete
+          Effect: Allow
+          Action:
+            - route53:DeleteVPCAssociationAuthorization
+            - route53:DisassociateVPCFromHostedZone
+          Resource: "*"
+        - Sid: NoDevOpsPolicyEdit
+          Effect: Deny
+          Action:
+            - iam:DeletePolicy
+            - iam:CreatePolicyVersion
+            - iam:DeletePolicyVersion
+            - iam:SetDefaultPolicyVersion
+          Resource:
+            - !Sub "arn:aws:iam::${AWS::AccountId}:policy/FirstAm_ESSC-N-2_SuperDevOpsPolicy"  
+      Roles:
+        # Roles used by SuperDevOpsPolicy
+        - !Ref FirstamESSCN2SuperInteractiveAccessRole
+
+  SuperDevOpsRolePermissionBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Metadata: 
+      cfn_nag: 
+        rules_to_suppress: 
+          - id: W13 
+            reason: "Explicit deny is in place to prevent access to CAVM tagged resources." 
+          - id: W28
+            reason: "Standard name is explicitly set."
+          - id: F5 
+            reason: "Explicit deny statements are in place to prevent access to CAVM tagged resources."             
+          - id: F40
+            reason: "This policy is to be used as a permissions boundary. Explicit deny in place to prevent modification to CAVM tagged resources."
+    Properties:
+      ManagedPolicyName: SuperDevOpsRolePermissionsBoundary
+      Description: 'Managed Policy that will be used as the Boundary Policy for the DevOps Role'
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Sid: AllowEC2Read
+          Effect: Allow
+          Action:
+            - ec2:Describe*         # Describe all EC2 resources (including Network components)
+            - ec2:Get*              # Get all EC2 resources (including Network components)
+            - autoscaling:Describe*
+          Resource: "*"       
+
+        - Sid: AllowEC2AMIWrite
+          Effect: Allow
+          Action:
+            - ec2:Copy*Image        # CopyFpgaImage, CopyImage
+            - ec2:Create*Image      # CreateFpgaImage, CreateImage
+            - ec2:Describe*Images   # DescribeFpgaImages, DescribeImages
+            - ec2:*ImageAttribute   # DescribeFpgaImageAttribute, DescribeImageAttribute, ModifyFpgaImageAttribute, ModifyImageAttribute, ResetFpgaImageAttribute, ResetImageAttribute 
+            - ec2:Describe*Image*   # DescribeFpgaImages, DescribeImages, DescribeImportImageTasks
+            - ec2:ImportImage
+            - ec2:DeleteFpgaImage
+            - ec2:*registerImage    # RegisterImage, DeregisterImage
+          Resource: "*"        
+
+        - Sid: AllowEC2StackWrite
+          Effect: Allow
+          Action:
+            # VPC Endpoint
+            #   CreateVpcEndpoint, CreateVpcEndpointConnectionNotification, CreateVpcEndpointServiceConfiguration
+            #   DeleteVpcEndpoints, DeleteVpcEndpointConnectionNotifications, DeleteVpcEndpointServiceConfigurations
+            #   ModifyVpcEndpoint, ModifyVpcEndpointConnectionNotification, ModifyVpcEndpointServiceConfiguration, ModifyVpcPeeringConnectionOptions
+            #   RejectVpcEndpointConnections 
+            - ec2:*VpcEndpoint*
+
+            # EBS Volumes
+            - ec2:DescribeVolume*         # DescribeVolumeAttribute, DescribeVolumeStatus, DescribeVolumes, DescribeVolumesModification
+            - ec2:*Volume                 # AttachVolume, DetachVolume, DeleteVolume, CreateVolume, ModifyVolume, ImportVolume
+            - ec2:ModifyVolumeAttribute           
+            - ec2:EnableVolumeIO           
+            - ec2:Describe*Snapshot*      # DescribeImportSnapshotTasks, DescribeSnapshotAttribute, DescribeSnapshots
+            - ec2:*SnapshotAttribute      # ModifySnapshotAttribute, ResetSnapshotAttribute, DescribeSnapshotAttribute
+            - ec2:CopySnapshots
+            - ec2:*Snapshot               # CreateSnapshot, ImportSnapshot, DeleteSnapshot
+
+            # Instance Profiles
+            - ec2:*IamInstanceprofile*    # AssociateIamInstanceProfile, DescribeIamInstanceProfileAssociations, DisassociateIamInstanceProfile, ReplaceIamInstanceProfileAssociation
+
+            # Ec2 Instances
+            - ec2:*Tags                   # CreateTags, DeleteTags
+            - ec2:*KeyPair*               # CreateKeyPair, ImportKeyPair, DeleteKeyPair, DescribeKeyPairs
+            - ec2:DescribeInstance*       # DescribeInstances, DescribeInstanceAttribute, DescribeInstanceCreditSpecifications, DescribeInstanceStatus   
+            - ec2:*ScheduledInstances     # RunScheduledInstances, PurchaseScheduledInstances
+            - ec2:*MonitorInstances       # MonitorInstances, UnMonitorInstances          
+            - ec2:RebootInstances
+            - ec2:RunInstances
+            - ec2:StopInstances
+            - ec2:StartInstances
+            - ec2:TerminateInstances
+            - ec2:*Instance                # BundleInstance, ImportInstance, ConfirmProductInstance
+            - ec2:*SpotFleet*              # RequestSpotFleet, ModifySpotFleetRequest,CancelSpotFleetRequests, DescribeSpotFleetRequests, DescribeSpotFleetInstances, DescribeSpotFleetRequestHistory
+            - ec2:*SpotInstance*           # CancelSpotInstanceRequests, RequestSpotInstances, DescribeSpotInstanceRequests
+            - ec2:*SpotDatafeed*           # DescribeSpotDatafeedSubscription, CreateSpotDatafeedSubscription, DeleteSpotDatafeedSubscription
+            - ec2:CreateFleet
+            - ec2:ModifyFleet
+            - ec2:DeleteFleets
+            - ec2:GetLaunchTemplateData
+            - ec2:DescribeLaunchTemplate*  # DescribeLaunchTemplates, DescribeLaunchTemplateVersions
+            - ec2:*LaunchTemplate          # CreateLaunchTemplate, ModifyLaunchTemplate, DeleteLaunchTemplate
+            - ec2:*LaunchTemplateVersion*  # CreateLaunchTemplateVersion, DeleteLaunchTemplateVersions, DescribeLaunchTemplateVersions
+            - ec2:*InstanceAttribute       # DescribeInstanceAttribute, ModifyInstanceAttribute, ResetInstanceAttribute
+            - ec2:*ExportTask*             # CreateInstanceExportTask, CancelExportTask, DescribeExportTasks
+            - ec2:*AssociateAddress        # AssociateAddress, DisassociateAddress
+            - ec2:AllocateAddress
+            - ec2:ReleaseAddress
+            - ec2:Describe*Addresses        # DescribeAddresses, DescribeMovingAddresses
+            - ec2:*AssignPrivateIpAddresses # AssignPrivateIpAddresses, UnassignPrivateIpAddresses
+            - ec2:RestoreAddressToClassic
+            - ec2:*Hosts                   # DescribeHosts, AllocateHosts, ReleaseHosts, ModifyHosts
+            - ec2:PurchaseHostReservation
+            - ec2:*InstanceStatus          # ReportInstanceStatus, DescribeInstanceStatus
+            - ec2:*Placement*              # CreatePlacementGroup, DeletePlacementGroup, DescribePlacementGroups, ModifyInstancePlacement
+            - ec2:ModifyInstanceCapacityReservationAttributes
+            - ec2:ModifyInstanceCreditSpecification
+            - ec2:ModifyInstanceEventStartTime
+            - ec2:*NetworkInterface*
+          Resource: "*"
+
+        - Sid: AllowSecurityGroupsWrite
+          Effect: Allow
+          Action:
+            - ec2:AuthorizeSecurityGroup*    # AuthorizeSecurityGroupEgress, AuthorizeSecurityGroupIngress  
+            - ec2:*SecurityGroup             # CreateSecurityGroup, DeleteSecurityGroup
+            - ec2:Describe*SecurityGroup*    # DescribeSecurityGroupReferences, DescribeSecurityGroups, DescribeStaleSecurityGroups
+            - ec2:RevokeSecurityGroup*       # RevokeSecurityGroupEgress, RevokeSecurityGroupIngress
+            - ec2:UpdateSecurityGroup*       # UpdateSecurityGroupRuleDescriptionsEgress, UpdateSecurityGroupRuleDescriptionsIngress
+          Resource: "*"
+
+        - Sid: AllowELBWrite
+          Effect: Allow
+          Action:
+            - elasticloadbalancing:*Tags       # AddTags, DescribeTags, RemoveTags
+            - elasticloadbalancing:DescribeListeners 
+            - elasticloadbalancing:*Listener     # CreateListener, ModifyListener, DeleteListener
+            - elasticloadbalancing:*LoadBalancer # CreateLoadBalancer, DeleteLoadBalancer
+            - elasticloadbalancing:ModifyLoadBalancerAttributes
+            - elasticloadbalancing:DescribeLoadBalancers
+            - elasticloadbalancing:*Rule         # CreateRule, ModifyRule, DeleteRule       
+            - elasticloadbalancing:DescribeRules
+            - elasticloadbalancing:*TargetGroup  # CreateTargetGroup, DeleteTargetGroup
+            - elasticloadbalancing:*TargetGroupAttributes  # ModifyTargetGroupAttributes, DescribeTargetGroupAttributes         
+            - elasticloadbalancing:DescribeTargetGroups
+            - elasticloadbalancing:*registerTargets # RegisterTargets, DeregisterTargets
+            - elasticloadbalancing:Set*             # SetIpAddressType, SetRulePriorities, SetSecurityGroups, SetSubnets, SetWebAcl
+
+            # Classic load balancer only
+            - elasticloadbalancing:Describe*
+            - elasticloadbalancing:*LoadBalancerListener* # CreateLoadBalancerListeners, DeleteLoadBalancerListeners, SetLoadBalancerListenerSSLCertificate
+            - elasticloadbalancing:*LoadBalancerPolicy    # CreateLoadBalancerPolicy, DeleteLoadBalancerPolicy
+            - elasticloadbalancing:SetLoadBalancerPolicies*  # SetLoadBalancerPoliciesForBackendServer, SetLoadBalancerPoliciesOfListener     
+            - elasticloadbalancing:*Subnets               # AttachLoadBalancerToSubnets, DetachLoadBalancerFromSubnets
+            - elasticloadbalancing:ApplySecurityGroupsToLoadBalancer
+            - elasticloadbalancing:*RegisterInstances*    # RegisterInstancesWithLoadBalancer, DeregisterInstancesFromLoadBalancer
+            - elasticloadbalancing:*AvailabilityZonesForLoadBalancer # EnableAvailabilityZonesForLoadBalancer, DisableAvailabilityZonesForLoadBalancer
+            - elasticloadbalancing:*CookieStickinessPolicy # CreateAppCookieStickinessPolicy, CreateLBCookieStickinessPolicy
+          Resource: "*"
+
+        - Sid: AllowS3Write
+          Effect: Allow
+          Action:
+            - s3:*
+          Resource: "*"
+
+        - Sid: AllowCloudWatchWrite
+          Effect: Allow
+          Action:
+            # Read permissions
+            - cloudwatch:List*
+            - cloudwatch:Get*
+            - cloudwatch:Describe*
+            - logs:*
+          Resource: "*"
+
+        - Sid: AllowKMSUserPermissions
+          Effect: Allow
+          Action:
+            - kms:Decrypt
+            - kms:Encrypt   
+            - kms:ReEncrypt*         # ReEncryptTo, ReEncryptFrom
+            - kms:Describe*
+            - kms:GenerateDataKey*   # GenerateDataKey, GenerateDataKeyWithoutPlaintext
+            - kms:List*
+          Resource: "*"
+        - Sid: AllowKMSManagementPermissions
+          Effect: Allow
+          Action:
+            - kms:CreateKey
+            - kms:UpdateKeyDescription
+            - kms:ScheduleKeyDeletion
+            - kms:GenerateRandom                      
+            - kms:DisableKey*        # DisableKey, DisableKeyRotation
+            - kms:EnableKey*         # EnableKey, EnableKeyRotation,
+            - kms:*KeyMaterial       # ImportKeyMaterial, DeleteImportedKeyMaterial
+            - kms:*KeyPolicy         # GetKeyPolicy, PutKeyPolicy 
+            - kms:*Grant*            # ListGrants,  RevokeGrant, CreateGrant, RetireGrant
+            - kms:*tag*              # TagResource, UntagResource, ListResourceTags
+            - kms:*Alias*            # CreateAlias, UpdateAlias, DeleteAlias, ListAliases
+            - kms:GetKeyRotationStatus
+          Resource: "*"          
+
+        - Sid: AllowACMWrite
+          Effect: Allow
+          Action:
+            # RenewCertificate, RequestCertificate, UpdateCertificateOptions, ImportCertificate, GetCertificate, DeleteCertificate, DescribeCertificate, ListCertificates
+            # AddTagsToCertificate, RemoveTagsFromCertificate, ListTagsForCertificate          
+            - acm:*Certificate*        
+          Resource: "*"
+
+        - Sid: AllowDynamoDBWrite
+          Effect: Allow
+          Action:
+            - dynamodb:Describe*
+            - dynamodb:*Item          # GetItem, PutItem, UpdateItem, DeleteItem, BatchGetItem, BatchWriteItem, ConditionCheckItem
+            - dynamodb:*Table*        # CreateGlobalTable, UpdateGlobalTable, UpdateGlobalTableSettings, CreateTable, UpdateTable, DeleteTable, RestoreTable*
+            - dynamodb:Query
+            - dynamodb:*Backup*       # CreateBackup, DeleteBackup, UpdateContinuousBackups
+            - dynamodb:UpdateTimeToLive    
+            - dynamodb:*tag*          # TagResource, UntagResource, ListTagsOfResource
+          Resource: "*"     
+
+        - Sid: AllowFsxWrite
+          Effect: Allow
+          Action:
+            - fsx:Describe*
+            - fsx:*Backup             # CreateBackup, DeleteBackup
+            - fsx:*FileSystem*        # CreateFileSystem, CreateFileSystemFromBackup, DeleteFileSystem, UpdateFileSystem 
+            - fsx:*tag*               # TagResource, UntagResource, ListTagsForResource 
+          Resource: "*"
+
+        - Sid: AllowDataSyncWrite
+          Effect: Allow
+          Action:
+            - datasync:*Location*     # CreateLocation(Efs,Nfs,S3), DeleteLocation, DescribeLocation(Efs,Nfs,S3), ListLocations
+            - datasync:*Task*         # CreateTask, CancelTaskExecution, DeleteTask, DescribeTask(Execution), ListTaskExecutions, ListTasks, StartTaskExecution, UpdateTask
+            - datasync:*Agent         # CreateAgent, UpdateAgent, DeleteAgent, DescribeAgent
+            - datasync:*tagResource   # TagResource, UntagResource
+            - datasync:Create*           # CreateLocationS3 CreateTask  CreateLocationEfs  CreateLocationNfs CreateAgent
+            - datasync:Describe*         # DescribeLocationS3 DescribeTask DescribeLocationEfs DescribeLocationNfs DescribeAgent DescribeTaskExecution
+            - datasync:List*             # ListAgents ListLocations ListTagsForResource ListTaskExecutions ListTasks
+          Resource: "*"
+
+        - Sid: OtherPermissions
+          Effect: Allow
+          Action:
+            - route53:AssociateVPCWithHostedZone
+            - route53:CreateVPCAssociationAuthorization
+            - route53:UpdateHostedZoneComment
+            - transfer:*
+          Resource: "*"
+
+        - Sid: AllowDMSWrite
+          Effect: Allow
+          Action:
+            - dms:Describe*          
+            - dms:*Tags*                  # AddTagsToResource, ListTagsForResource, RemoveTagsFromResource
+            - dms:*Endpoint               # CreateEndpoint, ModifyEndpoint, DeleteEndpoint 
+            - dms:*ReplicationInstance    # CreateReplicationInstance, ModifyReplicationInstance, DeleteReplicationInstance, RebootReplicationInstance 
+            - dms:*ReplicationTask        # CreateReplicationTask, ModifyReplicationTask, StartReplicationTask, StopReplicationTask, DeleteReplicationTask 
+            - dms:*EventSubscription      # CreateEventSubscription, ModifyEventSubscription, DeleteEventSubscription 
+            - dms:RefreshSchemas
+            - dms:TestConnection
+          Resource: "*"
+
+        - Sid: AllowRDSReadWrite
+          Effect: Allow
+          Action:
+            - rds:Describe*
+            - rds:AddTagsToResource
+            - rds:CreateEventSubscription
+            - rds:StopDBInstance
+            - rds:CreateDBSubnetGroup
+            - rds:StartDBInstance
+            - rds:DeleteDBSubnetGroup
+            - rds:DeleteEventSubscription
+            - rds:AddRoleToDBInstance
+            - rds:RebootDBInstance
+            - rds:CreateDBInstance
+            - rds:ModifyDBInstance
+            - rds:RemoveTagsFromResource
+            - rds:CreateDBInstanceReadReplica
+            - rds:DeleteDBInstance
+          Resource: "*"
+
+        - Sid: AllowIAMBasicAccess
+          Effect: Allow
+          Action:
+            ### Read
+            - iam:Get*
+            - iam:List*
+            ### Pass Role
+            - iam:PassRole
+            ### Assume Role
+            - sts:AssumeRoleWithSAML
+            ### Service link role permissions
+            - iam:*ServiceLinkedRole* # CreateServiceLinkedRole, DeleteServiceLinkedRole, GetServiceLinkedRoleDeletionStatus
+          Resource: "*"
+
+        - Sid: AWSDenyCAVMTagging 
+          Effect: Deny 
+          Action: "*" 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "aws:RequestTag/AVMAccessLevel":  
+                - "CAVM" 
+                - "CAVM-Read" 
+        - Sid: EC2DenyCAVM 
+          Effect: Deny 
+          Action: "*" 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "ec2:ResourceTag/AVMAccessLevel": "CAVM" 
+        - Sid: AWSDenyCAVM 
+          Effect: Deny 
+          Action: "*" 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "aws:ResourceTag/AVMAccessLevel": "CAVM"
+        - Sid: EC2DenyCAVMRead 
+          Effect: Deny 
+          NotAction: 
+            - ec2:Describe* 
+            - ec2:Get* 
+            - ec2:Search* 
+            - ec2:RunInstances 
+          Resource: "*" 
+          Condition: 
+            StringEquals: 
+              "ec2:ResourceTag/AVMAccessLevel": "CAVM-Read" 
+        - Sid: ConfigDenyCAVMRead 
+          Effect: Deny 
+          NotAction: 
+            - config:Describe* 
+            - config:*Get* 
+            - config:List* 
+            - config:SelectResourceConfig 
+            - config:StartConfigRulesEvaluation 
+          Resource: !Sub "arn:aws:config:*:${AWS::AccountId}:config-rule/*" 
+          Condition: 
+            StringEquals: 
+              "aws:ResourceTag/AVMAccessLevel": "CAVM-Read" 
+
+  #----------------------------------------------------------------------------------------------
+Outputs:
+  TemplateVersion:
+      Description: CodePipeline IAM Roles pipeline CloudFormation Template Version Number
+      Value: !Ref VersionNumber
+  StackName:
+      Description: Name of the current stack used for client CloudWatch Log Data Collection
+      Value: !Ref 'AWS::StackName'

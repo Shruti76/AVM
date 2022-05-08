@@ -1,0 +1,282 @@
+#  Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#  Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with
+#  the License. A copy of the License is located at
+#      http://aws.amazon.com/apache2.0/
+#  or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+#  CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and
+#  limitations under the License.
+
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description:
+  Azure AD and AWS SAML Integration Deployment Pipeline  - this template will setup AWS CodePipeline for Cross-Account IAM deployment using CloudFormation.
+
+Parameters:
+  BuildVersion:
+    Type: String
+    Description: Account Configuration Build Version to use
+  #Parameters used for tagging
+  #------------------------------------------------------------------------------------
+  EnvironmentName:
+    Type: String
+    Description: "Enter the environment of the account"
+  ApplicationName:
+    Type: String
+    Description: "Enter the application name of the account"
+  ApplicationID:
+    Type: String
+    Description: "Enter the Application ID of the applciation residing in the account"
+  AVMAccessLevel:
+    Type: String
+    Description: "Enter the access level"
+    Default: CAVM
+  #----------------------------------------------------------------------------------------------
+  ChildAccountID:
+    Description: AWS AccountNumber for IAM Account
+    Type: String
+    MaxLength: 12
+    MinLength: 12
+    AllowedPattern: "[0-9]+"
+  CloudFormationCrossAccountAccessRoleName:
+    Description: Name of the IAM CrossAccount access Role in the Child Account for CodePipeline to Assume
+    Type: String
+  CrossAccountCondition:
+    Description: Conditionally creates the resources for cross account access
+    Type: String
+    Default: true
+
+Conditions:
+  AddCrossAccountDeploy: !Equals [ !Ref CrossAccountCondition, true ]
+
+Resources:
+  LocalVariables1:
+    Type: "Custom::LocalVariables"
+    Properties:
+      ServiceToken: !ImportValue LocalVariables
+      Variables:
+        - Name: PrefixUpper
+          Value: '{{resolve:ssm:AVMAccountPrefix:1}}'
+          Function: ToUpper
+
+  LocalVariables2:
+    Type: "Custom::LocalVariables"
+    Properties:
+      ServiceToken: !ImportValue LocalVariables
+      Variables:
+        - Name: PipelineName
+          Value: !Sub
+            - "${accountSNR}-${accountEnv}-${accountNum}_CAVM_CP_BasicIAMSAML-${ChildAccountID}"
+            - accountSNR: !Select [0, !Split ["-", !GetAtt 'LocalVariables1.PrefixUpper']]
+              accountEnv: !Select [1, !Split ["-", !GetAtt 'LocalVariables1.PrefixUpper']]
+              accountNum: !Select [2, !Split ["-", !GetAtt 'LocalVariables1.PrefixUpper']]
+        - Name: CloudFormationChildPipelineDeployerRoleName
+          Value: !Sub
+            - "Local_CAVM-${AVMEnvironment}_ChildCFDeployment"
+            - AVMEnvironment: '{{resolve:ssm:AVMEnvironment:1}}'
+        - Name: CloudFormationIAMDeployerRoleName
+          Value: !Sub
+            - "Local_CAVM-${AVMEnvironment}_ChildIAMDeployment"
+            - AVMEnvironment: '{{resolve:ssm:AVMEnvironment:1}}'
+        - Name: IamDir
+          Value: "Account Vending Machine/AVM-Basic/IAM-Repo"
+
+  #Pipeline Code
+  DeploymentPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RestartExecutionOnUpdate: true
+      ArtifactStore:
+        Type: S3
+        Location: !ImportValue ArtifactStoreBucketName
+        EncryptionKey:
+          Id:
+            Fn::ImportValue: AVMCMKArn
+          Type: KMS
+      Name: !GetAtt 'LocalVariables2.PipelineName'
+      RoleArn:
+        Fn::ImportValue: AVMChildCodePipelineServiceRoleArn
+      Stages:
+      - Name: GetSource
+        Actions:
+        - Name: GetSourceAction
+          ActionTypeId:
+            Category: Source
+            Owner: AWS
+            Version: '1'
+            Provider: S3
+          OutputArtifacts:
+            - Name: SourceOutput
+          Configuration:
+            S3Bucket: !ImportValue ArtifactStoreBucketName
+            S3ObjectKey: !Sub "${BuildVersion}/templates.zip"
+            PollForSourceChanges: false
+          RunOrder: '1'
+
+      ## Generate Pipeline resource configurations STAGE
+      - Name: GeneratePipelineConfigurations
+        Actions:
+        - Name: ChildResourceConfigurationBuild
+          ActionTypeId:
+            Category: Build
+            Owner: AWS
+            Provider: CodeBuild
+            Version: '1'
+          Configuration:
+            ProjectName: !Ref ChildPipelineBuildProject
+          InputArtifacts:
+            - Name: SourceOutput
+          OutputArtifacts:
+            - Name: PipelineConfigOutput
+          RunOrder: '1'
+
+      - Name: DeployIAM
+        Actions:
+          - Name: DeployIAMAction
+            InputArtifacts:
+            - Name: SourceOutput
+            - Name: PipelineConfigOutput          
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Version: '1'
+              Provider: CloudFormation
+            Configuration:
+              StackName: !Sub
+                - "${StackPrefix}-iam-saml-setup"
+                - StackPrefix: '{{resolve:ssm:AVMAccountPrefix:1}}' 
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              RoleArn: !Sub
+                - arn:aws:iam::${ChildAccountID}:role/${CloudFormationIAMDeployerRoleName}
+                - CloudFormationIAMDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationIAMDeployerRoleName'
+              TemplatePath: !Sub 
+                - "SourceOutput::${IamDir}/iam-saml-setup.yaml"
+                - IamDir: !GetAtt 'LocalVariables2.IamDir'
+              TemplateConfiguration: !Sub "PipelineConfigOutput::${ChildAccountID}-tag-as-param-configuration.json"
+              ParameterOverrides: !Sub 
+                - |
+                  {
+                    "S3Bucket" : "${S3BucketName}",
+                    "S3Key"  : "${BuildVersion}/IAMSamlSetup.zip",
+                    "AVMEnvironment" : "${AVMEnvironment}",
+                    "MetaDataS3Bucket" : "${MetadataBucketName}"
+                  }
+                - { MetadataBucketName: !ImportValue ADMetadataBucketName, AVMEnvironment: '{{resolve:ssm:AVMEnvironment:1}}', S3BucketName: !ImportValue ArtifactStoreBucketName }
+            RunOrder: '2'
+            RoleArn:
+                Fn::If:
+                - AddCrossAccountDeploy
+                - !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+                - !Ref AWS::NoValue
+  #-----------------------------------------------------------------------
+  # Setting CodeBuild to Run pre-package pipeline buildspec  
+  ChildPipelineCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+      Path: /
+      RoleName: !Sub
+        - '${PipelineName}-bld-pkg'
+        - PipelineName: !GetAtt 'LocalVariables2.PipelineName'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents             
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Effect: Allow
+                Resource:
+                  - !Join ['',['arn:aws:s3:::',!ImportValue ArtifactStoreBucketName, '/*']]
+                  - !Join ['',['arn:aws:s3:::',!ImportValue ArtifactStoreBucketName]]
+              - Action:
+                  - kms:DescribeKey
+                  - kms:Decrypt
+                  - kms:Encrypt
+                  - kms:GenerateDataKey*
+                  - kms:ReEncrypt*
+                Effect: Allow
+                Resource:
+                  - !ImportValue AVMCMKArn
+            Version: '2012-10-17'
+          PolicyName: !Sub
+            - '${PipelineName}-bld-pkg'
+            - PipelineName: !GetAtt 'LocalVariables2.PipelineName'
+
+  ChildPipelineBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Description: !Sub
+        - 'Project to pre-package child pipeline repo for ${PipelineName}'
+        - PipelineName: !GetAtt 'LocalVariables2.PipelineName'
+      EncryptionKey:
+        Fn::ImportValue: AVMCMKArn
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:2.0
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: ChildAccountID
+            Type: PLAINTEXT
+            Value: !Ref ChildAccountID            
+          - Name: EnvironmentName
+            Type: PLAINTEXT
+            Value: !Ref EnvironmentName 
+          - Name: ApplicationName
+            Type: PLAINTEXT
+            Value: !Ref ApplicationName 
+          - Name: ApplicationID
+            Type: PLAINTEXT
+            Value: !Ref ApplicationID 
+          - Name: AVMAccessLevel
+            Type: PLAINTEXT
+            Value: !Ref AVMAccessLevel     
+      Name: !Sub
+        - '${PipelineName}-bld-pkg'
+        - PipelineName: !GetAtt 'LocalVariables2.PipelineName'
+      ServiceRole: !Ref ChildPipelineCodeBuildRole
+      Source:
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                java: openjdk11        
+            build:
+              commands:
+                - mkdir configs
+                - tagConfig="configs/${ChildAccountID}-tag-configuration.json"
+                - paramConfig="configs/${ChildAccountID}-param-tag-configuration.json"
+                - tagAsParamConfig="configs/${ChildAccountID}-tag-as-param-configuration.json"
+                - jq -n --arg env "${EnvironmentName}" --arg appname "${ApplicationName}" --arg appid "${ApplicationID}" --arg accesslevel "${AVMAccessLevel}" '{"Tags":{"EnvironmentName":$env,"ApplicationName":$appname,"ApplicationID":$appid,"AVMAccessLevel":$accesslevel}}' > "$tagConfig"
+                - jq -n --arg env "${EnvironmentName}" --arg appname "${ApplicationName}" --arg appid "${ApplicationID}" --arg accesslevel "${AVMAccessLevel}" '{"Tags":{"EnvironmentName":$env,"ApplicationName":$appname,"ApplicationID":$appid,"AVMAccessLevel":$accesslevel},"Parameters":{"EnvironmentName":$env,"ApplicationName":$appname,"ApplicationID":$appid,"AVMAccessLevel":$accesslevel}}' > "$tagAsParamConfig"
+                - jq -n --arg env "${EnvironmentName}" --arg appname "${ApplicationName}" --arg appid "${ApplicationID}" --arg accesslevel "${AVMAccessLevel}" '{"Parameters":{"EnvironmentName":$env,"ApplicationName":$appname,"ApplicationID":$appid,"AVMAccessLevel":$accesslevel}}' > "$paramConfig"
+          artifacts:
+            files:
+              - "**/*"
+            discard-paths: yes
+            base-directory: configs
+        Type: CODEPIPELINE
+  #-----------------------------------------------------------------------        
+Outputs:
+  DeploymentPipeline:
+    Value:
+      Ref: DeploymentPipeline
+    Description: The name of the deployment CodePipeline
+  StackName:
+      Description: Name of the current stack
+      Value: !Ref 'AWS::StackName'

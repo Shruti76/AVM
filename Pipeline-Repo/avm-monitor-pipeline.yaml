@@ -1,0 +1,945 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description:
+  AWS Monitoring Deployment Pipeline - this template will setup AWS CodePipeline for Cross-Account monitoring deployments using CloudFormation.
+ ## AWS Config/Cloudtrail - Cross Region Pipeline
+ ## Ensure the apporiate regions are specified
+
+Parameters:
+  BuildVersion:
+    Type: String
+    Description: Account Configuration Build Version to use
+  #Parameters used for tagging
+  #------------------------------------------------------------------------------------
+  EnvironmentName:
+    Type: String
+    Description: "Enter the environment of the account"
+  ApplicationName:
+    Type: String
+    Description: "Enter the application name of the account"
+  ApplicationID:
+    Type: String
+    Description: "Enter the Application ID of the applciation residing in the account"
+  AVMAccessLevel:
+    Type: String
+    Description: "Enter the access level"
+    Default: CAVM
+  #----------------------------------------------------------------------------------------------
+  StackPrefix:
+    Type: String
+    Description: Lowercase prefix string for the stack names built by this pipeline.
+  AccountEnvironment:
+    Description: "Enter the Environment of the AWS account. Example: P for Prod, N for Non-Prod and S for Sandbox"
+    Type: String
+    MaxLength: 1
+    MinLength: 1
+    AllowedPattern: "[PNS]"
+  ChildAccountID:
+    Description: AWS Account Number of the Central Logging Account
+    Type: String
+    MaxLength: 12
+    MinLength: 12
+    AllowedPattern: "[0-9]+"
+
+  CloudFormationGuardDutyRolesStackName:
+    Description: Name of the stack name for pre-req roles
+    Type: String
+    Default: "guardduty-crossaccount-role"
+
+  ChildAccountNotificationEmail:
+    Description: Email notification to child account
+    Type: String
+  RedLockExternalID:
+    Type: String
+    Description: 'Provide an ExternalID (Example: Xoih821ddwf)'
+    MinLength: '1'
+    AllowedPattern: '[a-zA-Z0-9\=\,\.\@\:\/\-_]*'
+    ConstraintDescription: >-
+      ExternalID must contain alphanumeric characters and only these special
+      characters are allowed =,.@:/-. 
+
+  ## Pre-req setups
+  DeploymentRolesFileName:
+    Description: "Path to the pipeline pre-req deployment roles template file within logging repository"
+    Type: String
+    Default: "pre-req-templates/logging-deployment-roles.yaml"     
+  DeploymentRolesStackName:
+    Description: "Stack name for the pre-req deployment roles configuration"
+    Type: String
+    Default: "logging-deployment-roles"
+
+  ## SecOps - RedLock Variables
+  RedLockTemplateFileName:
+    Description: File name of the RedLock template
+    Type: String
+    Default: "monitor-templates/child-redlock.yaml"     
+  RedLockStackName:
+    Description: Name of the CloudFormation Stack for RedLock roles
+    Type: String
+    Default: "redlock"
+
+  ## SecOps - Qualys Connector Variables
+  QualysConnectorTemplateFileName:
+    Description: File name of the Qualys Connector template
+    Type: String
+    Default: "monitor-templates/qualys-connector.yaml"     
+  QualysConnectorConfigurationFileName:
+    Description: File name of the Qualys Connector configuration file
+    Type: String
+    Default: "monitor-templates/qualys-connector-configuration.json"  
+  QualysConnectorStackName:
+    Description: Name of the CloudFormation Stack for Qualys Connector
+    Type: String
+    Default: "qualys-connector"
+
+  ## SecOps - Splunk CrossAccount Role Variables
+  SplunkTemplateFileName:
+    Description: File name of the Splunk template
+    Type: String
+    Default: "monitor-templates/splunk-crossaccount-role.yaml"     
+  SplunkStackName:
+    Description: Name of the CloudFormation Stack for Splunk roles
+    Type: String
+    Default: "splunk-cross-account-role"
+ 
+  ## ConfigRules Variables
+  ConfigRulesTemplateFileName:
+    Description: File name of the configs implemenation template
+    Type: String
+    Default: "monitor-templates/child-config-rules.yaml"     
+  ConfigRulesStackName:
+    Description: Name of the CloudFormation Stack for AWS Config rules
+    Type: String
+    Default: "config-rules"
+  RequiredTagsConfigRuleTemplateFileName:
+    Description: File name of the required tags config rules implemenation template
+    Type: String
+    Default: "monitor-templates/config-rule-required-tags.yaml" 
+  RequiredTagsConfigRuleTemplateConfigurationFileName:
+    Description: File name of the required tags config rules template configuration file
+    Type: String
+    Default: "monitor-templates/config-rule-required-tags-config.json"   
+  RequiredTagsConfigRuleStackName:
+    Description: Name of the CloudFormation Stack for AWS Required Tags Config rules
+    Type: String
+    Default: "config-rule-required-tags"
+
+  ## Logging Aggregator service Variables
+  CloudTrailTemplateFileName:
+    Description: File name of the central logging implemenation template
+    Type: String
+    Default: "cloudtrail-child-setup.yaml"  
+  CloudTrailStackName:
+    Description: Name of the CloudFormation Stack
+    Type: String
+    Default: "cloudtrail-child-setup"
+  ConfigLogTemplateFileName:
+    Description: File name of the central logging implemenation template
+    Type: String
+    Default: "config-child-setup.yaml"  
+  ConfigLogStackName:
+    Description: Name of the CloudFormation Stack
+    Type: String
+    Default: "config-child-setup" 
+
+  # Guard duty variables
+  GuardDutyDirectory:
+    Type: String
+    Description: Folder name where guard duty templates are stored within logging repository.
+    Default: GuardDuty
+  GuardDutySetupTemplateFileName:
+    Type: String
+    Description: Setup template for guardduty
+    Default: guardduty-setup.yaml
+  GuardDutySetupStackName:
+    Type: String
+    Description: Stack name for guardduty
+    Default: guard-duty-setup
+  GuardDutyLambdaStackName:
+    Type: String
+    Description: Stack name for guardduty lambda function
+    Default: guard-duty-lambda
+
+  # Code Build variables 
+
+  ## Deployment Permissions
+  CloudFormationCrossAccountAccessRoleName:
+    Description: Name of the Pipeline CrossAccount access Role in the Child Account for CodePipeline to Assume
+    Type: String
+
+  CrossAccountCondition:
+    Description: Conditionally creates the resources for cross account access
+    Type: String
+    Default: true  
+
+  # Account Email Address consumed by GuardDuty
+  AccountEmailaddress:
+    Description: "Enter the Email address of the AWS account. Example: AWSI-S-AWSAccount-1@firstam.com"
+    Type: String
+
+Mappings:
+  AccountTypeMap:
+    Types:
+      P: prod
+      N: nonprod
+      S: sandbox
+
+Conditions:
+  AddCrossAccountDeploy: !Equals [ !Ref CrossAccountCondition, true ]
+
+Resources:
+  LocalVariables1:
+    Type: "Custom::LocalVariables"
+    Properties:
+      ServiceToken: !ImportValue LocalVariables
+      Variables:
+        - Name: PrefixUpper
+          Value: '{{resolve:ssm:AVMAccountPrefix:1}}'
+          Function: ToUpper          
+
+  LocalVariables2:
+    Type: "Custom::LocalVariables"
+    Properties:
+      ServiceToken: !ImportValue LocalVariables
+      Variables:
+        - Name: PipelineName
+          Value: !Sub 
+            - "${accountSNR}-${accountEnv}-${accountNum}_CAVM_CP_BasicMonitor-${ChildAccountID}"
+            - accountSNR: !Select [0, !Split ["-", !GetAtt 'LocalVariables1.PrefixUpper']]
+              accountEnv: !Select [1, !Split ["-", !GetAtt 'LocalVariables1.PrefixUpper']]
+              accountNum: !Select [2, !Split ["-", !GetAtt 'LocalVariables1.PrefixUpper']]            
+        - Name: CloudFormationIAMDeployerRoleName
+          Value: !Sub 
+            - "Local_CAVM-${AVMEnvironment}_ChildIAMDeployment"
+            - AVMEnvironment: '{{resolve:ssm:AVMEnvironment:1}}'
+        - Name: CloudFormationLoggingDeployerRoleName
+          Value: !Sub
+            - "Local_CAVM-${AVMEnvironment}_LogAggregatorDeploy"
+            - AVMEnvironment: '{{resolve:ssm:AVMEnvironment:1}}'
+        - Name: LoggingDir
+          Value: "Account Vending Machine/AVM-Basic/Logging-Repo"
+
+  EastCFNExports:
+    Type: "Custom::UtilityFunction"
+    Properties:
+      ServiceToken: !ImportValue GetRegionCfnExport
+      TargetRegion: us-east-2
+
+  #-------------------------------------------------------------------------------------                
+  # Deployment Pipeline setup
+  DeploymentPipeline:
+    Type: AWS::CodePipeline::Pipeline    
+    Properties:
+      RestartExecutionOnUpdate: true
+      ArtifactStores:
+        -
+          Region: us-west-2
+          ArtifactStore:
+            Type: S3
+            Location: !ImportValue ArtifactStoreBucketName
+            EncryptionKey:
+              Id:
+                Fn::ImportValue: AVMCMKArn
+              Type: KMS
+        -
+          Region: us-east-2
+          ArtifactStore:
+            Type: S3
+            Location: !GetAtt 'EastCFNExports.ArtifactStoreBucketName'
+            EncryptionKey: 
+              Id: !GetAtt 'EastCFNExports.AVMCMKArn'
+              Type: KMS
+      Name: !GetAtt 'LocalVariables2.PipelineName'
+      RoleArn:
+        Fn::ImportValue: AVMChildCodePipelineServiceRoleArn
+
+      Stages:
+      # Get source step
+      - Name: GetSource
+        Actions:
+        - Name: GetSourceAction
+          ActionTypeId:
+            Category: Source
+            Owner: AWS
+            Version: '1'
+            Provider: S3
+          OutputArtifacts:
+            - Name: SourceOutput
+          Configuration:
+            S3Bucket: !ImportValue ArtifactStoreBucketName
+            S3ObjectKey: !Sub "${BuildVersion}/templates.zip" 
+            PollForSourceChanges: false
+          RunOrder: '1'
+
+      ## Generate Pipeline resource configurations STAGE
+      - Name: PipelinePrerequisites
+        Actions:
+        - Name: GeneratePipelineConfigurations
+          ActionTypeId:
+            Category: Build
+            Owner: AWS
+            Provider: CodeBuild
+            Version: '1'
+          Configuration:
+            ProjectName: !Ref ChildPipelineBuildProject
+          InputArtifacts:
+            - Name: SourceOutput            
+          OutputArtifacts:
+            - Name: PipelineConfigOutput
+          RunOrder: '1'
+
+        - Name: 'DeploymentRoles'
+          RunOrder: 2
+          InputArtifacts:
+            - Name: SourceOutput 
+            - Name: PipelineConfigOutput            
+          ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Provider: CloudFormation
+            Version: '1'
+          Configuration:
+            StackName: !Sub "${StackPrefix}-${DeploymentRolesStackName}"
+            ActionMode: CREATE_UPDATE
+            Capabilities: CAPABILITY_NAMED_IAM
+            TemplatePath: !Sub 
+              - "SourceOutput::${LoggingDir}/${DeploymentRolesFileName}"
+              - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+            TemplateConfiguration: !Sub "PipelineConfigOutput::${ChildAccountID}-tag-configuration.json"         
+            RoleArn: !Sub
+              - "arn:aws:iam::${ChildAccountID}:role/${CloudFormationIAMDeployerRoleName}"
+              - CloudFormationIAMDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationIAMDeployerRoleName'
+            ParameterOverrides: !Sub 
+              - |
+                {
+                "GuardDutyDeployerRoleName" : "Local_CAVM-${env}_GuardDutyDeployerRole"
+                }
+              - { env: '{{resolve:ssm:AVMEnvironment:1}}'}
+          RoleArn: !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+
+      #----------------------------------------------------------------
+      # Logging aggregator deployment
+      - Name: DeployCentralLogging
+        Actions:
+          - Name: CloudtrailCentralLogging
+            RunOrder: '1'           
+            InputArtifacts:
+            - Name: SourceOutput
+            - Name: PipelineConfigOutput            
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Version: '1'
+              Provider: CloudFormation
+            Configuration:
+              StackName: !Sub "${StackPrefix}-${CloudTrailStackName}"
+              ParameterOverrides: !Sub 
+                - |
+                  {
+                  "AccountType" : "${AccountTypeValue}",
+                  "FACloudTrailS3BucketPrefix" : "${LoggingAccountPrefix}-cloudtrail-aggregator"
+                  }
+                - LoggingAccountPrefix: '{{resolve:ssm:LoggingAccountPrefix:1}}'
+                  AccountTypeValue: !FindInMap ['AccountTypeMap', 'Types', !Ref AccountEnvironment]
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              RoleArn: !Sub
+                - arn:aws:iam::${ChildAccountID}:role/${CloudFormationLoggingDeployerRoleName}
+                - CloudFormationLoggingDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationLoggingDeployerRoleName'
+              TemplatePath: !Sub 
+                - "SourceOutput::${LoggingDir}/${CloudTrailTemplateFileName}"
+                - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+              TemplateConfiguration: !Sub "PipelineConfigOutput::${ChildAccountID}-tag-configuration.json"              
+            RoleArn:
+                  Fn::If:
+                  - AddCrossAccountDeploy
+                  - !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+                  - !Ref AWS::NoValue                              
+
+          - Name: ConfigLogging-us-west-2
+            Region: 'us-west-2'
+            RunOrder: '1'              
+            InputArtifacts:
+            - Name: SourceOutput
+            - Name: PipelineConfigOutput            
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Version: '1'
+              Provider: CloudFormation
+            Configuration:
+              StackName: !Sub "${StackPrefix}-${ConfigLogStackName}"
+              ParameterOverrides: !Sub 
+                - |
+                  {
+                  "AccountType" : "${AccountTypeValue}",
+                  "FAConfigS3BucketPrefix": "${LoggingAccountPrefix}-config-aggregator",
+                  "FACentralConfigAccount": "${LoggingAccountID}"
+                  }
+                - LoggingAccountPrefix: '{{resolve:ssm:LoggingAccountPrefix:1}}'
+                  LoggingAccountID: '{{resolve:ssm:LoggingAccountID:1}}'
+                  AccountTypeValue: !FindInMap ['AccountTypeMap', 'Types', !Ref AccountEnvironment]
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              TemplatePath: !Sub 
+                - "SourceOutput::${LoggingDir}/${ConfigLogTemplateFileName}"
+                - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+              TemplateConfiguration: !Sub "PipelineConfigOutput::${ChildAccountID}-tag-as-param-configuration.json"                
+              RoleArn: !Sub
+                - arn:aws:iam::${ChildAccountID}:role/${CloudFormationLoggingDeployerRoleName}
+                - CloudFormationLoggingDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationLoggingDeployerRoleName'
+            RoleArn:
+              Fn::If:
+                - AddCrossAccountDeploy
+                - !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+                - !Ref AWS::NoValue              
+
+          - Name: ConfigLogging-us-east-2
+            Region: 'us-east-2'
+            RunOrder: '1'
+            InputArtifacts:
+            - Name: SourceOutput
+            - Name: PipelineConfigOutput              
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Version: '1'
+              Provider: CloudFormation
+            Configuration:
+              StackName: !Sub "${StackPrefix}-${ConfigLogStackName}"
+              ParameterOverrides: !Sub 
+                - |
+                  {
+                  "AccountType" : "${AccountTypeValue}",
+                  "FAConfigS3BucketPrefix": "${LoggingAccountPrefix}-config-aggregator",
+                  "FACentralConfigAccount": "${LoggingAccountID}"
+                  }
+                - LoggingAccountPrefix: '{{resolve:ssm:LoggingAccountPrefix:1}}'
+                  LoggingAccountID: '{{resolve:ssm:LoggingAccountID:1}}'
+                  AccountTypeValue: !FindInMap ['AccountTypeMap', 'Types', !Ref AccountEnvironment]
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              TemplatePath: !Sub 
+                - "SourceOutput::${LoggingDir}/${ConfigLogTemplateFileName}"
+                - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+              TemplateConfiguration: !Sub "PipelineConfigOutput::${ChildAccountID}-tag-as-param-configuration.json"                
+              RoleArn: !Sub
+                - arn:aws:iam::${ChildAccountID}:role/${CloudFormationLoggingDeployerRoleName}
+                - CloudFormationLoggingDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationLoggingDeployerRoleName'
+            RoleArn:
+              Fn::If:
+                - AddCrossAccountDeploy
+                - !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+                - !Ref AWS::NoValue
+
+      # Deploy SecOps Resources Stage
+      - Name: DeploySecOpsResources
+        Actions:
+          - Name: 'DeployRedLockPermissions'
+            RunOrder: '1'
+            InputArtifacts:
+              - Name: SourceOutput
+              - Name: PipelineConfigOutput              
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Provider: CloudFormation
+              Version: '1'
+            Configuration:
+              StackName: !Sub "${StackPrefix}-${RedLockStackName}"
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              TemplatePath: !Sub 
+                - "SourceOutput::${LoggingDir}/${RedLockTemplateFileName}"
+                - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+              TemplateConfiguration: !Sub "PipelineConfigOutput::${ChildAccountID}-tag-configuration.json"              
+              RoleArn: !Sub
+                - arn:aws:iam::${ChildAccountID}:role/${CloudFormationLoggingDeployerRoleName}
+                - CloudFormationLoggingDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationLoggingDeployerRoleName'
+              ParameterOverrides: !Sub |
+                {
+                  "RedLockExternalID" : "${RedLockExternalID}"
+                }
+            RoleArn:
+              Fn::If:
+                - AddCrossAccountDeploy
+                - !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+                - !Ref AWS::NoValue
+
+          - Name: 'DeployQualysConnector'
+            RunOrder: '1'
+            InputArtifacts:
+              - Name: SourceOutput             
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Provider: CloudFormation
+              Version: '1'
+            Configuration:
+              StackName: !Sub "${StackPrefix}-${QualysConnectorStackName}"
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              TemplatePath: !Sub 
+                - "SourceOutput::${LoggingDir}/${QualysConnectorTemplateFileName}"
+                - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+              TemplateConfiguration: !Sub 
+                - "SourceOutput::${LoggingDir}/${QualysConnectorConfigurationFileName}"          
+                - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+              ParameterOverrides: !Sub
+                - |
+                  {
+                    "AVMEnvironment" : "${AVMEnvironment}"
+                  }
+                - { AVMEnvironment : '{{resolve:ssm:AVMEnvironment:1}}' }
+              RoleArn: !Sub
+                - arn:aws:iam::${ChildAccountID}:role/${CloudFormationLoggingDeployerRoleName}
+                - CloudFormationLoggingDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationLoggingDeployerRoleName'
+            RoleArn:
+              Fn::If:
+                - AddCrossAccountDeploy
+                - !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+                - !Ref AWS::NoValue
+
+          - Name: 'DeploySplunkCrossAccountRole'
+            RunOrder: '1'
+            InputArtifacts:
+              - Name: SourceOutput
+              - Name: PipelineConfigOutput
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Provider: CloudFormation
+              Version: '1'
+            Configuration:
+              StackName: !Sub "${StackPrefix}-${SplunkStackName}"
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              TemplatePath: !Sub 
+                - "SourceOutput::${LoggingDir}/${SplunkTemplateFileName}"
+                - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+              TemplateConfiguration: !Sub "PipelineConfigOutput::${ChildAccountID}-tag-configuration.json"
+              ParameterOverrides: !Sub
+                - |
+                  {
+                    "LoggingAccountID" : "${LoggingAccountID}",
+                    "SplunkCrossAccountAccessRoleName" : "Local_SCES-${AVMEnvironment}-Splunk-CrossAccount"
+                  }
+                - { LoggingAccountID: '{{resolve:ssm:LoggingAccountID:1}}', AVMEnvironment : '{{resolve:ssm:AVMEnvironment:1}}' }
+              RoleArn: !Sub
+                - arn:aws:iam::${ChildAccountID}:role/${CloudFormationLoggingDeployerRoleName}
+                - CloudFormationLoggingDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationLoggingDeployerRoleName'
+            RoleArn:
+              Fn::If:
+                - AddCrossAccountDeploy
+                - !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+                - !Ref AWS::NoValue
+
+      # Deploy config rules in the regions
+      - Name: Deploy-ConfigRules
+        Actions:
+          - Name: 'Managed-Config-Rules-us-west-2'
+            Region: 'us-west-2'
+            RunOrder: '1'
+            InputArtifacts:
+              - Name: SourceOutput
+              - Name: PipelineConfigOutput              
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Provider: CloudFormation
+              Version: '1'
+            Configuration:
+              StackName: !Sub "${StackPrefix}-${ConfigRulesStackName}"
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              TemplatePath: !Sub 
+                - "SourceOutput::${LoggingDir}/${ConfigRulesTemplateFileName}"
+                - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+              TemplateConfiguration: !Sub "PipelineConfigOutput::${ChildAccountID}-tag-as-param-configuration.json"              
+              RoleArn: !Sub
+                - arn:aws:iam::${ChildAccountID}:role/${CloudFormationLoggingDeployerRoleName}
+                - CloudFormationLoggingDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationLoggingDeployerRoleName'
+            RoleArn:
+              Fn::If:
+                - AddCrossAccountDeploy
+                - !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+                - !Ref AWS::NoValue
+
+          - Name: 'Managed-Config-Rules-us-east-2'
+            Region: 'us-east-2'
+            RunOrder: '1'
+            InputArtifacts:
+              - Name: SourceOutput
+              - Name: PipelineConfigOutput              
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Provider: CloudFormation
+              Version: '1'
+            Configuration:
+              StackName: !Sub "${StackPrefix}-${ConfigRulesStackName}"
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              TemplatePath: !Sub 
+                - "SourceOutput::${LoggingDir}/${ConfigRulesTemplateFileName}"
+                - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+              TemplateConfiguration: !Sub "PipelineConfigOutput::${ChildAccountID}-tag-as-param-configuration.json"              
+              RoleArn: !Sub
+                - arn:aws:iam::${ChildAccountID}:role/${CloudFormationLoggingDeployerRoleName}
+                - CloudFormationLoggingDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationLoggingDeployerRoleName'
+            RoleArn:
+              Fn::If:
+                - AddCrossAccountDeploy
+                - !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+                - !Ref AWS::NoValue
+
+          # Deploy RequiredTag rules in the regions
+          - Name: 'Required-Tag-Rules-us-west-2'
+            Region: 'us-west-2'
+            RunOrder: '1'
+            InputArtifacts:
+              - Name: SourceOutput
+              - Name: PipelineConfigOutput              
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Provider: CloudFormation
+              Version: '1'
+            Configuration:
+              StackName: !Sub "${StackPrefix}-${RequiredTagsConfigRuleStackName}"
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              TemplatePath: !Sub 
+                - "SourceOutput::${LoggingDir}/${RequiredTagsConfigRuleTemplateFileName}"
+                - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+              TemplateConfiguration: !Sub "PipelineConfigOutput::${RequiredTagsConfigRuleTemplateConfigurationFileName}"
+              RoleArn: !Sub
+                - arn:aws:iam::${ChildAccountID}:role/${CloudFormationLoggingDeployerRoleName}
+                - CloudFormationLoggingDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationLoggingDeployerRoleName'
+              ParameterOverrides: !Sub 
+                - |
+                  {
+                    "pLambdaBucket" : "${S3BucketName}",
+                    "pLambdaKey"  : "${BuildVersion}/RequiredTags.zip",
+                    "pNotificationEmail" : "${ChildAccountNotificationEmail}"
+                  }
+                - {S3BucketName: !ImportValue ArtifactStoreBucketName}
+            RoleArn:
+              Fn::If:
+                - AddCrossAccountDeploy
+                - !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+                - !Ref AWS::NoValue
+
+          - Name: 'Required-Tag-Rules-us-east-2'
+            Region: 'us-east-2'
+            RunOrder: '1'
+            InputArtifacts:
+              - Name: SourceOutput
+              - Name: PipelineConfigOutput              
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Provider: CloudFormation
+              Version: '1'
+            Configuration:
+              StackName: !Sub "${StackPrefix}-${RequiredTagsConfigRuleStackName}"
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              TemplatePath: !Sub 
+                - "SourceOutput::${LoggingDir}/${RequiredTagsConfigRuleTemplateFileName}"
+                - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+              TemplateConfiguration: !Sub "PipelineConfigOutput::${RequiredTagsConfigRuleTemplateConfigurationFileName}"
+              RoleArn: !Sub
+                - arn:aws:iam::${ChildAccountID}:role/${CloudFormationLoggingDeployerRoleName}
+                - CloudFormationLoggingDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationLoggingDeployerRoleName'
+              ParameterOverrides: !Sub 
+                - |
+                  {
+                    "pLambdaBucket" : "${S3BucketName}",
+                    "pLambdaKey"  : "${BuildVersion}/RequiredTags.zip",
+                    "pNotificationEmail" : "${ChildAccountNotificationEmail}"
+                  }
+                - {S3BucketName: !GetAtt 'EastCFNExports.ArtifactStoreBucketName'}
+            RoleArn:
+              Fn::If:
+                - AddCrossAccountDeploy
+                - !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+                - !Ref AWS::NoValue
+
+      - Name: GuardDuty
+        Actions:
+          - Name: Deploy-GuardDuty-CrossAccount-Role
+            InputArtifacts:
+              - Name: SourceOutput
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Version: '1'
+              Provider: CloudFormation
+            Configuration:
+              StackName: !Sub "${StackPrefix}-${CloudFormationGuardDutyRolesStackName}-${ChildAccountID}"
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              RoleArn: !Sub
+                - "arn:aws:iam::${LoggingAccountID}:role/${CloudFormationIAMDeployerRoleName}"
+                - LoggingAccountID: '{{resolve:ssm:LoggingAccountID:1}}'
+                  CloudFormationIAMDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationIAMDeployerRoleName'
+              TemplatePath: !Sub 
+                - "SourceOutput::${LoggingDir}/${GuardDutyDirectory}/guardduty-crossaccount-role.yaml"
+                - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+              TemplateConfiguration: !Sub 
+                - "SourceOutput::${LoggingDir}/${GuardDutyDirectory}/${AVMEnvironmentName}/guardduty-config.json"
+                - { AVMEnvironmentName: '{{resolve:ssm:AVMEnvironmentName:1}}', LoggingDir: !GetAtt 'LocalVariables2.LoggingDir' }
+              ParameterOverrides: !Sub |
+                {
+                  "ChildAccountID" : "${ChildAccountID}"
+                }                    
+            RunOrder: 1
+            RoleArn: !Sub 
+              - arn:aws:iam::${LoggingAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+              - { LoggingAccountID: '{{resolve:ssm:LoggingAccountID:1}}' }
+
+          - Name: Deploy-GuardDuty-Lambda-US-West-2
+            Region: 'us-west-2'
+            InputArtifacts:
+              - Name: SourceOutput
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Version: '1'
+              Provider: CloudFormation
+            Configuration:
+              StackName: !Sub 
+                - "${StackPrefix}-${GuardDutyLambdaStackName}"
+                - { StackPrefix: '{{resolve:ssm:AVMAccountPrefix:1}}' } 
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              RoleArn: !Sub
+                - "arn:aws:iam::${ChildAccountID}:role/${CloudFormationIAMDeployerRoleName}"
+                - CloudFormationIAMDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationIAMDeployerRoleName'
+              TemplatePath: "SourceOutput::Lambda/GuardDuty_Invite/Stack/guardduty_invite.yaml"
+              TemplateConfiguration: "SourceOutput::Lambda/GuardDuty_Invite/Stack/guardduty_invite_configuration.json"          
+              ParameterOverrides: !Sub
+                - |
+                  {
+                    "FunctionName" : "${PrefixUpper}-LAM-GuardDutyInvite",
+                    "S3Bucket" : "${S3BucketName}",
+                    "S3Key" : "${BuildVersion}/GuardDuty_Invite.zip"
+                  }
+                - {PrefixUpper: !GetAtt 'LocalVariables1.PrefixUpper', S3BucketName: !ImportValue ArtifactStoreBucketName}
+            RunOrder: 2
+            RoleArn: !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+
+          - Name: Deploy-GuardDuty-Lambda-US-East-2
+            Region: 'us-east-2'
+            InputArtifacts:
+              - Name: SourceOutput
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Version: '1'
+              Provider: CloudFormation
+            Configuration:
+              StackName: !Sub 
+                - "${StackPrefix}-${GuardDutyLambdaStackName}"
+                - { StackPrefix: '{{resolve:ssm:AVMAccountPrefix:1}}' } 
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              RoleArn: !Sub
+                - "arn:aws:iam::${ChildAccountID}:role/${CloudFormationIAMDeployerRoleName}"
+                - CloudFormationIAMDeployerRoleName: !GetAtt 'LocalVariables2.CloudFormationIAMDeployerRoleName'
+              TemplatePath: "SourceOutput::Lambda/GuardDuty_Invite/Stack/guardduty_invite.yaml"
+              TemplateConfiguration: "SourceOutput::Lambda/GuardDuty_Invite/Stack/guardduty_invite_configuration.json"
+              ParameterOverrides: !Sub
+                - |
+                  {
+                    "FunctionName" : "${PrefixUpper}-LAM-GuardDutyInvite",
+                    "S3Bucket" : "${S3BucketName}",
+                    "S3Key" :    "${BuildVersion}/GuardDuty_Invite.zip"
+                  }
+                - {PrefixUpper: !GetAtt 'LocalVariables1.PrefixUpper', S3BucketName: !GetAtt 'EastCFNExports.ArtifactStoreBucketName'}
+            RunOrder: 2
+            RoleArn: !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName} 
+
+          - Name: Deploy-GuardDuty-Setup-us-west-2
+            Region: us-west-2
+            InputArtifacts:
+              - Name: SourceOutput
+              - Name: PipelineConfigOutput
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Version: '1'
+              Provider: CloudFormation
+            Configuration:
+              StackName: !Sub "${StackPrefix}-${GuardDutySetupStackName}"
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              RoleArn: !Sub 
+                - "arn:aws:iam::${ChildAccountID}:role/Local_CAVM-${env}_GuardDutyDeployerRole"
+                - { env: '{{resolve:ssm:AVMEnvironment:1}}'}
+              TemplatePath: !Sub 
+                - "SourceOutput::${LoggingDir}/${GuardDutyDirectory}/${GuardDutySetupTemplateFileName}"
+                - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+              TemplateConfiguration: "PipelineConfigOutput::guardduty-setup.json"
+              ParameterOverrides: !Sub
+                - |
+                  {
+                    "MasterId" : "${LoggingAccountID}",
+                    "AccountEmail" : "${AccountEmailaddress}"
+                  }
+                - { LoggingAccountID: '{{resolve:ssm:LoggingAccountID:1}}' }              
+            RunOrder: 3
+            RoleArn: !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName}
+
+          - Name: Deploy-GuardDuty-Setup-us-east-2
+            Region: us-east-2
+            InputArtifacts:
+              - Name: SourceOutput
+              - Name: PipelineConfigOutput
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Version: '1'
+              Provider: CloudFormation
+            Configuration:
+              StackName: !Sub "${StackPrefix}-${GuardDutySetupStackName}"
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              RoleArn: !Sub 
+                - "arn:aws:iam::${ChildAccountID}:role/Local_CAVM-${env}_GuardDutyDeployerRole"
+                - { env: '{{resolve:ssm:AVMEnvironment:1}}'}
+              TemplatePath: !Sub 
+                - "SourceOutput::${LoggingDir}/${GuardDutyDirectory}/${GuardDutySetupTemplateFileName}"
+                - LoggingDir: !GetAtt 'LocalVariables2.LoggingDir'
+              TemplateConfiguration: "PipelineConfigOutput::guardduty-setup.json"
+              ParameterOverrides: !Sub
+                - |
+                  {
+                    "MasterId" : "${LoggingAccountID}",
+                    "AccountEmail" : "${AccountEmailaddress}"
+                  }
+                - { LoggingAccountID: '{{resolve:ssm:LoggingAccountID:1}}' }              
+            RunOrder: 3
+            RoleArn: !Sub arn:aws:iam::${ChildAccountID}:role/${CloudFormationCrossAccountAccessRoleName} 
+
+  #-----------------------------------------------------------------------
+  # Setting CodeBuild to Run pre-package pipeline buildspec  
+  ChildPipelineCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+      Path: /  
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents             
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Effect: Allow
+                Resource:
+                  - !Join ['',['arn:aws:s3:::',!ImportValue ArtifactStoreBucketName, '/*']]
+                  - !Join ['',['arn:aws:s3:::',!ImportValue ArtifactStoreBucketName]]
+              - Action:
+                  - kms:DescribeKey
+                  - kms:Decrypt
+                  - kms:Encrypt
+                  - kms:GenerateDataKey*
+                  - kms:ReEncrypt*
+                Effect: Allow
+                Resource:
+                  - !ImportValue AVMCMKArn
+            Version: '2012-10-17'
+          PolicyName: 'inline-root'
+
+  ChildPipelineBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Description: !Sub
+        - 'Project to pre-package child pipeline repo for ${PipelineName}'
+        - PipelineName: !GetAtt 'LocalVariables2.PipelineName'
+      EncryptionKey:
+        Fn::ImportValue: AVMCMKArn
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:2.0
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: ChildAccountID
+            Type: PLAINTEXT
+            Value: !Ref ChildAccountID
+          - Name: GuardDutyDirectory
+            Type: PLAINTEXT
+            Value: !Ref GuardDutyDirectory   
+          - Name: AVMEnvironmentName
+            Type: PLAINTEXT
+            Value: '{{resolve:ssm:AVMEnvironmentName:1}}'                
+          - Name: EnvironmentName
+            Type: PLAINTEXT
+            Value: !Ref EnvironmentName 
+          - Name: ApplicationName
+            Type: PLAINTEXT
+            Value: !Ref ApplicationName 
+          - Name: ApplicationID
+            Type: PLAINTEXT
+            Value: !Ref ApplicationID 
+          - Name: AVMAccessLevel
+            Type: PLAINTEXT
+            Value: !Ref AVMAccessLevel 
+      ServiceRole: !Ref ChildPipelineCodeBuildRole
+      Source:
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                java: openjdk11        
+            build:
+              commands:
+                - requiredTagsConfigSrc="$CODEBUILD_SRC_DIR/Account Vending Machine/AVM-Basic/Logging-Repo/monitor-templates/config-rule-required-tags-config.json"
+                - guardDutyRoleConfigSrc="$CODEBUILD_SRC_DIR/Account Vending Machine/AVM-Basic/Logging-Repo/${GuardDutyDirectory}/${AVMEnvironmentName}/guardduty-config.json"          
+                - mkdir configs
+                - mkdir configs/monitor-templates                
+                - tagConfig="configs/${ChildAccountID}-tag-configuration.json"
+                - paramConfig="configs/${ChildAccountID}-param-tag-configuration.json" 
+                - requiredTagsConfig="configs/monitor-templates/config-rule-required-tags-config.json"
+                - tagAsParamConfig="configs/${ChildAccountID}-tag-as-param-configuration.json"        
+                - guarddutySetupConfig="configs/guardduty-setup.json"   
+                - jq -n --arg env "${EnvironmentName}" --arg appname "${ApplicationName}" --arg appid "${ApplicationID}" --arg accesslevel "${AVMAccessLevel}" '{"Tags":{"EnvironmentName":$env,"ApplicationName":$appname,"ApplicationID":$appid,"AVMAccessLevel":$accesslevel}}' > "$tagConfig"
+                - jq -n --arg env "${EnvironmentName}" --arg appname "${ApplicationName}" --arg appid "${ApplicationID}" --arg accesslevel "${AVMAccessLevel}" '{"Tags":{"EnvironmentName":$env,"ApplicationName":$appname,"ApplicationID":$appid,"AVMAccessLevel":$accesslevel},"Parameters":{"EnvironmentName":$env,"ApplicationName":$appname,"ApplicationID":$appid,"AVMAccessLevel":$accesslevel}}' > "$tagAsParamConfig"
+                - jq -n --arg env "${EnvironmentName}" --arg appname "${ApplicationName}" --arg appid "${ApplicationID}" --arg accesslevel "${AVMAccessLevel}" '{"Parameters":{"EnvironmentName":$env,"ApplicationName":$appname,"ApplicationID":$appid,"AVMAccessLevel":$accesslevel}}' > "$paramConfig"     
+                - jq -s '.[0] * .[1] * .[2]' "$requiredTagsConfigSrc" "$tagConfig" "$paramConfig" > "$requiredTagsConfig"
+                - echo "Building GuardDuty Setup Configuration"
+                - guardDutyRoleName=$(jq -r ".Parameters.GuarddutyCrossAccountAccessRoleName" "$guardDutyRoleConfigSrc")
+                - echo "{\"Parameters\":{\"GuardDutyCrossAccountRole\":\"$guardDutyRoleName\"}}" > "tempGuardDutySetup.json"                 
+                - jq -s '.[0] * .[1]' "$tagConfig" "tempGuardDutySetup.json" > "$guarddutySetupConfig"   
+          artifacts:
+            files:
+              - "**/*"
+            base-directory: configs
+        Type: CODEPIPELINE
+  #-----------------------------------------------------------------------  
+Outputs:
+  DeploymentPipeline:
+    Value:
+      Ref: DeploymentPipeline
+    Description: The name of the deployment CodePipeline
+  StackName:
+      Description: Name of the current stack used
+      Value:
+        Ref: 'AWS::StackName'

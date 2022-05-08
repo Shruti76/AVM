@@ -1,0 +1,1170 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Teamplate to create config rules to check for required tags'
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Required Tag Keys
+        Parameters:
+          - ptag1Key
+          - ptag2Key
+          - ptag3Key
+          - ptag4Key
+          - ptag5Key
+          - ptag6Key
+      - Label:
+          default: Optional Tag Values
+        Parameters:
+          - ptag1Value
+          - ptag2Value
+          - ptag3Value
+          - ptag4Value
+          - ptag5Value
+          - ptag6Value
+Conditions:
+  ctag1Key:
+    Fn::Not:
+      - Fn::Equals:
+          - ''
+          - Ref: ptag1Key
+  ctag1Value:
+    Fn::Not:
+      - Fn::Equals:
+          - ''
+          - Ref: ptag1Value
+  ctag2Key:
+    Fn::Not:
+      - Fn::Equals:
+          - ''
+          - Ref: ptag2Key
+  ctag2Value:
+    Fn::Not:
+      - Fn::Equals:
+          - ''
+          - Ref: ptag2Value
+  ctag3Key:
+    Fn::Not:
+      - Fn::Equals:
+          - ''
+          - Ref: ptag3Key
+  ctag3Value:
+    Fn::Not:
+      - Fn::Equals:
+          - ''
+          - Ref: ptag3Value
+  ctag4Key:
+    Fn::Not:
+      - Fn::Equals:
+          - ''
+          - Ref: ptag4Key
+  ctag4Value:
+    Fn::Not:
+      - Fn::Equals:
+          - ''
+          - Ref: ptag4Value
+  ctag5Key:
+    Fn::Not:
+      - Fn::Equals:
+          - ''
+          - Ref: ptag5Key
+  ctag5Value:
+    Fn::Not:
+      - Fn::Equals:
+          - ''
+          - Ref: ptag5Value
+  ctag6Key:
+    Fn::Not:
+      - Fn::Equals:
+          - ''
+          - Ref: ptag6Key
+  ctag6Value:
+    Fn::Not:
+      - Fn::Equals:
+          - ''
+          - Ref: ptag6Value
+  cEnableNotification:
+    Fn::Equals:
+      - 'Yes'
+      - Ref: pEnableNotification
+  cNoEnableNotification:
+    Fn::Equals:
+      - 'No'
+      - Ref: pEnableNotification
+Parameters:
+
+  #config rule names
+  pManagedConfigRuleName:
+    Type: String
+    Default: managed-required-tags
+    Description: The name that you assign to the Managed AWS Config rule.
+    MinLength: '1'
+    ConstraintDescription: This parameter is required.
+  pCustomResourceConfigRuleName:
+    Type: String
+    Default: custom-required-tags-resource
+    Description: The name that you assign to the Custom AWS Config rule triggered by Configuration Changes.
+    MinLength: '1'
+    ConstraintDescription: This parameter is required.
+  pCustomPeriodicConfigRuleName:
+    Type: String
+    Default: custom-required-tags-periodic
+    Description: The name that you assign to the Custom AWS Config rule triggered periodically.
+    MinLength: '1'
+    ConstraintDescription: This parameter is required.
+  pExecutionFrequencyForPeriodicTrigger:
+    Type: String
+    Default: TwentyFour_Hours
+    Description: The execution frequency of the custom config rule triggered periodically
+    AllowedValues:
+      - One_Hour
+      - Six_Hours
+      - Three_Hours
+      - Twelve_Hours
+      - TwentyFour_Hours
+
+  #S3 bucket and Object to store lambda deployment packages
+  pLambdaBucket:
+    Type: String
+    Description: The S3 Bucket name in the same region where the lambda deployment packages are uploaded to
+    MinLength: '1'
+    ConstraintDescription: This parameter is required.
+  pLambdaKey:
+    Type: String
+    Description: The object name of the lambda deployment package
+    MinLength: '1'
+    ConstraintDescription: This parameter is required.
+
+  #notification configuration
+  pEnableNotification:
+    Type: String
+    Default: 'Yes'
+    Description: >-
+      Option to Enable notification when a resource is non compliant to the rules. 
+      SNS topic name and Email address must be provided below in pSNSTopicName and pNotificationEmail parameters respectively if Yes is selected
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+  pSNSTopicName:
+    Type: String
+    Default: "required-tags-rule-sns-topic"
+    Description: The name of the SNS Topic Non Compliance notifications will be sent to. This is required if pEnableNotification was set to Yes
+  pNotificationEmail:
+    Type: String
+    Description: The email address to send notifications to. This is required if pEnableNotification was set to Yes
+  
+  #Tags keys and optional values to check
+  ptag1Key:
+    Type: String
+    Default: 'ApplicationID'
+    Description: Key of the required tag.
+    MinLength: '1'
+    ConstraintDescription: This parameter is required.
+  ptag1Value:
+    Type: String
+    Default: ''
+    Description: Optional value of the required tag. Separate multiple values with commas.
+  ptag2Key:
+    Type: String
+    Default: 'ApplicationName'
+    Description: Key of a second required tag.
+    MinLength: '1'
+    ConstraintDescription: This parameter is required.
+  ptag2Value:
+    Type: String
+    Default: ''
+    Description: >-
+      Optional value of the second required tag. Separate multiple values with
+      commas.
+  ptag3Key:
+    Type: String
+    Default: 'EnvironmentName'
+    Description: Key of a third required tag.
+    MinLength: '1'
+    ConstraintDescription: This parameter is required.
+  ptag3Value:
+    Type: String
+    Default: ''
+    Description: >-
+      Optional value of the third required tag. Separate multiple values with
+      commas.
+  ptag4Key:
+    Type: String
+    Default: ''
+    Description: Key of a fourth required tag.
+  ptag4Value:
+    Type: String
+    Default: ''
+    Description: >-
+      Optional value of the fourth required tag. Separate multiple values with
+      commas.
+  ptag5Key:
+    Type: String
+    Default: ''
+    Description: Key of a fifth required tag.
+  ptag5Value:
+    Type: String
+    Default: ''
+    Description: >-
+      Optional value of the fifth required tag. Separate multiple values with
+      commas.
+  ptag6Key:
+    Type: String
+    Default: ''
+    Description: Key of a sixth required tag.
+  ptag6Value:
+    Type: String
+    Default: ''
+    Description: >-
+      Optional value of the sixth required tag. Separate multiple values with
+      commas.
+
+  ApplicationName:
+    Description: Application Name associated to application to pass in as parameter into child resources
+    Type: String
+  EnvironmentName:
+    Description: Environment Name for application to pass in as parameter into child resources
+    Type: String
+  ApplicationID:
+    Description: Application ID number for the associated application to pass in as parameter into child resources
+    Type: String
+    MaxLength: 10
+  AVMAccessLevel:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+  AVMAccessLevelRead:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+    Default: "CAVM-Read"
+  
+Resources:
+  #####################################
+  # When Notification is enabled
+  #####################################
+
+  #IAM role of lambda function to send notifictions for non compliant resources
+  rNotificationLambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Condition: cEnableNotification
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: arn:aws:logs:*:*:*
+            - Effect: Allow
+              Action:
+                - sns:Publish
+              Resource:
+                Ref: rNotificationSNSTopic
+            - Effect: Allow
+              Action:
+                - config:BatchGetResourceConfig
+              Resource: "*"
+
+  rNotificationLambdaFunctionRoleTags:
+    Type: "Custom::rNotificationLambdaFunctionRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevel
+
+  #lambda function to send notifictions for non compliant resources
+  rNotificationLambdaFunction:
+    Type: AWS::Lambda::Function
+    Condition: cEnableNotification
+    Properties:
+      Role:
+        Fn::GetAtt:
+          - rNotificationLambdaFunctionRole
+          - Arn
+      Description: Function to Send notification when AWS Config Non Compliance Event occurs
+      Runtime: python3.7
+      Handler: config_notification.lambda_handler
+      Timeout: 120
+      Environment:
+        Variables:
+          topic_arn :
+            Ref: rNotificationSNSTopic
+      Code:
+         S3Bucket:
+          Ref: pLambdaBucket
+         S3Key:
+          Ref: pLambdaKey
+
+  #Notification SNS Topic
+  rNotificationSNSTopic:
+    Type: AWS::SNS::Topic
+    Condition: cEnableNotification
+    Properties:
+      TopicName:
+        Ref: pSNSTopicName
+      Subscription:
+        - Protocol: "email"
+          Endpoint:
+            Ref: pNotificationEmail
+  
+  #Cloudwatch event rule to capture non-compliant events
+  rConfigEventRule: 
+    Type: AWS::Events::Rule
+    Condition: cEnableNotification
+    Properties: 
+      Description: "EventRule to Capture AWS Config Non Compliance Event"
+      EventPattern: 
+        source:
+          - aws.config
+        detail-type:
+          - Config Rules Compliance Change
+        detail:
+          messageType:
+            - ComplianceChangeNotification
+          configRuleName:
+            - Ref: pManagedConfigRuleName
+            - Ref: pCustomResourceConfigRuleName
+            - Ref: pCustomPeriodicConfigRuleName
+          newEvaluationResult:
+            complianceType:
+              - NON_COMPLIANT
+      State: "ENABLED"
+      Targets: 
+        - Arn: 
+            Fn::GetAtt:
+              - rNotificationLambdaFunction
+              - Arn
+          Id: "TargetFunctionV1"
+  
+  #lambda permission to enable events to invoke lambda
+  rPermissionForEventsToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    Condition: cEnableNotification
+    Properties: 
+      FunctionName:
+        Ref: rNotificationLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn:
+        Fn::GetAtt:
+          - rConfigEventRule
+          - Arn
+
+  #Managed config rule triggered by configuration change with notification
+  rManagedAWSConfigRuleWithNotification:
+    Type: 'AWS::Config::ConfigRule'
+    Condition: cEnableNotification
+    DependsOn: rConfigEventRule
+    Properties:
+      ConfigRuleName:
+        Ref: pManagedConfigRuleName
+      Description: AWS Managed Config Rule to Check whether your resources have the tags that you specify.
+      InputParameters:
+        tag1Key:
+          Fn::If: 
+            - ctag1Key
+            - Ref: ptag1Key
+            - Ref: 'AWS::NoValue'
+        tag1Value:
+          Fn::If: 
+            - ctag1Value
+            - Ref: ptag1Value
+            - Ref: 'AWS::NoValue'
+        tag2Key:
+          Fn::If: 
+            - ctag2Key
+            - Ref: ptag2Key
+            - Ref: 'AWS::NoValue'
+        tag2Value:
+          Fn::If: 
+            - ctag2Value
+            - Ref: ptag2Value
+            - Ref: 'AWS::NoValue'
+        tag3Key:
+          Fn::If: 
+            - ctag3Key
+            - Ref: ptag3Key
+            - Ref: 'AWS::NoValue'
+        tag3Value:
+          Fn::If: 
+            - ctag3Value
+            - Ref: ptag3Value
+            - Ref: 'AWS::NoValue'
+        tag4Key:
+          Fn::If: 
+            - ctag4Key
+            - Ref: ptag4Key
+            - Ref: 'AWS::NoValue'
+        tag4Value:
+          Fn::If: 
+            - ctag4Value
+            - Ref: ptag4Value
+            - Ref: 'AWS::NoValue'
+        tag5Key:
+          Fn::If: 
+            - ctag5Key
+            - Ref: ptag5Key
+            - Ref: 'AWS::NoValue'
+        tag5Value:
+          Fn::If: 
+            - ctag5Value
+            - Ref: ptag5Value
+            - Ref: 'AWS::NoValue'
+        tag6Key:
+          Fn::If: 
+            - ctag6Key
+            - Ref: ptag6Key
+            - Ref: 'AWS::NoValue'
+        tag6Value:
+          Fn::If: 
+            - ctag6Value
+            - Ref: ptag6Value
+            - Ref: 'AWS::NoValue'
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::AutoScaling::AutoScalingGroup'
+          - 'AWS::CloudFormation::Stack'
+          - 'AWS::DynamoDB::Table'
+          - 'AWS::EC2::Instance'
+          - 'AWS::EC2::Volume'
+          - 'AWS::EC2::VPC'
+          - 'AWS::ElasticLoadBalancing::LoadBalancer'
+          - 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+          - 'AWS::RDS::DBInstance'
+          - 'AWS::RDS::DBSecurityGroup'
+          - 'AWS::RDS::DBSnapshot'
+          - 'AWS::RDS::DBSubnetGroup'
+          - 'AWS::RDS::EventSubscription'
+          - 'AWS::S3::Bucket'
+          - 'AWS::EC2::InternetGateway'
+          - 'AWS::EC2::NetworkAcl'
+          - 'AWS::EC2::NetworkInterface'
+          - 'AWS::EC2::RouteTable'
+          - 'AWS::EC2::SecurityGroup'
+          - 'AWS::EC2::Subnet'
+          - 'AWS::EC2::VPNConnection'
+          - 'AWS::EC2::VPNGateway'
+          - 'AWS::CodeBuild::Project'
+      Source:
+        Owner: AWS
+        SourceIdentifier: REQUIRED_TAGS
+  
+  rManagedAWSConfigRuleWithNotificationTags:
+    Type: "Custom::LambdaCallout"
+    Condition: cEnableNotification
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::Config::ConfigRule'
+      ResourceArn: !GetAtt [rManagedAWSConfigRuleWithNotification, Arn]
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #IAM role of lambda function of custom config rule triggered by configuration changes
+  rCustomConfigRuleResourceLambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: arn:aws:logs:*:*:*
+            - Effect: Allow
+              Action:
+                - iam:ListUserTags
+                - iam:ListRoleTags
+                - lambda:ListTags
+                - apigateway:GetTags
+                - config:PutEvaluations
+              Resource: '*'
+  
+  rCustomConfigRuleResourceLambdaFunctionRoleTags:
+    Type: "Custom::rCustomConfigRuleResourceLambdaFunctionRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref rCustomConfigRuleResourceLambdaFunctionRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevel
+
+  #lambda function of custom config rule triggered by configuration changes
+  rCustomConfigRuleResourceLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role:
+        Fn::GetAtt:
+          - rCustomConfigRuleResourceLambdaFunctionRole
+          - Arn
+      Description: Lambda Function to support the required tags AWS Custom Config rule triggered by configuration changes
+      Runtime: python3.7
+      Handler: custom_configrule_resource.lambda_handler
+      Timeout: 120
+      Code:
+        S3Bucket:
+          Ref: pLambdaBucket
+        S3Key:
+          Ref: pLambdaKey
+  
+  #Permissions to allow onfig trigger lambda function
+  rPermissionForCustomConfigRuleResourceToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName:
+        Ref: rCustomConfigRuleResourceLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "config.amazonaws.com"
+
+  #custom config rule triggered by configuration change with notification
+  rCustomConfigRuleResourceWithNotification:
+    Type: 'AWS::Config::ConfigRule'
+    DependsOn: 
+      - rConfigEventRule
+      - rPermissionForCustomConfigRuleResourceToInvokeLambda
+    Condition: cEnableNotification
+    Properties:
+      ConfigRuleName:
+        Ref: pCustomResourceConfigRuleName
+      Description: Custom Config Rule Triggered by Configuration Change to Check whether your resources have the tags that you specify.
+      InputParameters:
+        tag1Key:
+          Fn::If: 
+            - ctag1Key
+            - Ref: ptag1Key
+            - "null"
+        tag1Value:
+          Fn::If: 
+            - ctag1Value
+            - Ref: ptag1Value
+            - "null"
+        tag2Key:
+          Fn::If: 
+            - ctag2Key
+            - Ref: ptag2Key
+            - "null"
+        tag2Value:
+          Fn::If: 
+            - ctag2Value
+            - Ref: ptag2Value
+            - "null"
+        tag3Key:
+          Fn::If: 
+            - ctag3Key
+            - Ref: ptag3Key
+            - "null"
+        tag3Value:
+          Fn::If: 
+            - ctag3Value
+            - Ref: ptag3Value
+            - "null"
+        tag4Key:
+          Fn::If: 
+            - ctag4Key
+            - Ref: ptag4Key
+            - "null"
+        tag4Value:
+          Fn::If: 
+            - ctag4Value
+            - Ref: ptag4Value
+            - "null"
+        tag5Key:
+          Fn::If: 
+            - ctag5Key
+            - Ref: ptag5Key
+            - "null"
+        tag5Value:
+          Fn::If: 
+            - ctag5Value
+            - Ref: ptag5Value
+            - "null"
+        tag6Key:
+          Fn::If: 
+            - ctag6Key
+            - Ref: ptag6Key
+            - "null"
+        tag6Value:
+          Fn::If: 
+            - ctag6Value
+            - Ref: ptag6Value
+            - "null"
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::Lambda::Function'
+          - 'AWS::IAM::User'
+          - 'AWS::IAM::Role'
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::GetAtt:
+            - rCustomConfigRuleResourceLambdaFunction
+            - Arn
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+          - EventSource: aws.config
+            MessageType: OversizedConfigurationItemChangeNotification
+  
+  rCustomConfigRuleResourceWithNotificationTags:
+    Type: "Custom::LambdaCallout"
+    Condition: cEnableNotification
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::Config::ConfigRule'
+      ResourceArn: !GetAtt [rCustomConfigRuleResourceWithNotification, Arn]
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #IAM role of lambda function of custom config rule triggered periodically
+  rCustomConfigRulePeriodicLambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: arn:aws:logs:*:*:*
+            - Effect: Allow
+              Action:
+                - kms:ListKeys
+                - kms:DescribeKey
+                - kms:ListResourceTags
+                - kinesis:ListStreams
+                - kinesis:ListTagsForStream
+                - config:PutEvaluations
+              Resource: '*'
+  
+  rCustomConfigRulePeriodicLambdaFunctionRoleTags:
+    Type: "Custom::rCustomConfigRuleResourceLambdaFunctionRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref rCustomConfigRulePeriodicLambdaFunctionRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevel
+
+  #lambda function of custom config rule triggered periodically
+  rCustomConfigRulePeriodicLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role:
+        Fn::GetAtt:
+          - rCustomConfigRulePeriodicLambdaFunctionRole
+          - Arn
+      Description: Lambda Function to support the required tags AWS Custom Config rule triggered periodically
+      Runtime: python3.7
+      Handler: custom_configrule_periodic.lambda_handler
+      Timeout: 120
+      Code:
+        S3Bucket:
+          Ref: pLambdaBucket
+        S3Key:
+          Ref: pLambdaKey
+  
+  #Permissions to allow onfig trigger lambda function
+  rPermissionForCustomConfigRulePeriodicToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName:
+        Ref: rCustomConfigRulePeriodicLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "config.amazonaws.com"
+
+  #custom config rule triggered periodically with notification
+  rCustomConfigRulePeriodicWithNotification:
+    Type: 'AWS::Config::ConfigRule'
+    Condition: cEnableNotification
+    DependsOn: 
+      - rConfigEventRule
+      - rPermissionForCustomConfigRulePeriodicToInvokeLambda
+    Properties:
+      ConfigRuleName:
+        Ref: pCustomPeriodicConfigRuleName
+      Description: Custom Config Rule triggered periodically to Check whether your resources have the tags that you specify.
+      InputParameters:
+        tag1Key:
+          Fn::If: 
+            - ctag1Key
+            - Ref: ptag1Key
+            - "null"
+        tag1Value:
+          Fn::If: 
+            - ctag1Value
+            - Ref: ptag1Value
+            - "null"
+        tag2Key:
+          Fn::If: 
+            - ctag2Key
+            - Ref: ptag2Key
+            - "null"
+        tag2Value:
+          Fn::If: 
+            - ctag2Value
+            - Ref: ptag2Value
+            - "null"
+        tag3Key:
+          Fn::If: 
+            - ctag3Key
+            - Ref: ptag3Key
+            - "null"
+        tag3Value:
+          Fn::If: 
+            - ctag3Value
+            - Ref: ptag3Value
+            - "null"
+        tag4Key:
+          Fn::If: 
+            - ctag4Key
+            - Ref: ptag4Key
+            - "null"
+        tag4Value:
+          Fn::If: 
+            - ctag4Value
+            - Ref: ptag4Value
+            - "null"
+        tag5Key:
+          Fn::If: 
+            - ctag5Key
+            - Ref: ptag5Key
+            - "null"
+        tag5Value:
+          Fn::If: 
+            - ctag5Value
+            - Ref: ptag5Value
+            - "null"
+        tag6Key:
+          Fn::If: 
+            - ctag6Key
+            - Ref: ptag6Key
+            - "null"
+        tag6Value:
+          Fn::If: 
+            - ctag6Value
+            - Ref: ptag6Value
+            - "null"
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::GetAtt:
+            - rCustomConfigRulePeriodicLambdaFunction
+            - Arn
+        SourceDetails:
+          - EventSource: aws.config
+            MaximumExecutionFrequency:
+              Ref: pExecutionFrequencyForPeriodicTrigger
+            MessageType: ScheduledNotification
+
+  rCustomConfigRulePeriodicWithNotificationTags:
+    Type: "Custom::LambdaCallout"
+    Condition: cEnableNotification
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::Config::ConfigRule'
+      ResourceArn: !GetAtt [rCustomConfigRulePeriodicWithNotification, Arn]
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #####################################
+  # When Notification is not enabled
+  #####################################
+
+  #managed config rule triggered with configuration change without notification
+  rManagedAWSConfigRule:
+    Type: 'AWS::Config::ConfigRule'
+    Condition: cNoEnableNotification
+    Properties:
+      ConfigRuleName:
+        Ref: pManagedConfigRuleName
+      Description: AWS Managed Config Rule to Check whether your resources have the tags that you specify.
+      InputParameters:
+        tag1Key:
+          Fn::If: 
+            - ctag1Key
+            - Ref: ptag1Key
+            - Ref: 'AWS::NoValue'
+        tag1Value:
+          Fn::If: 
+            - ctag1Value
+            - Ref: ptag1Value
+            - Ref: 'AWS::NoValue'
+        tag2Key:
+          Fn::If: 
+            - ctag2Key
+            - Ref: ptag2Key
+            - Ref: 'AWS::NoValue'
+        tag2Value:
+          Fn::If: 
+            - ctag2Value
+            - Ref: ptag2Value
+            - Ref: 'AWS::NoValue'
+        tag3Key:
+          Fn::If: 
+            - ctag3Key
+            - Ref: ptag3Key
+            - Ref: 'AWS::NoValue'
+        tag3Value:
+          Fn::If: 
+            - ctag3Value
+            - Ref: ptag3Value
+            - Ref: 'AWS::NoValue'
+        tag4Key:
+          Fn::If: 
+            - ctag4Key
+            - Ref: ptag4Key
+            - Ref: 'AWS::NoValue'
+        tag4Value:
+          Fn::If: 
+            - ctag4Value
+            - Ref: ptag4Value
+            - Ref: 'AWS::NoValue'
+        tag5Key:
+          Fn::If: 
+            - ctag5Key
+            - Ref: ptag5Key
+            - Ref: 'AWS::NoValue'
+        tag5Value:
+          Fn::If: 
+            - ctag5Value
+            - Ref: ptag5Value
+            - Ref: 'AWS::NoValue'
+        tag6Key:
+          Fn::If: 
+            - ctag6Key
+            - Ref: ptag6Key
+            - Ref: 'AWS::NoValue'
+        tag6Value:
+          Fn::If: 
+            - ctag6Value
+            - Ref: ptag6Value
+            - Ref: 'AWS::NoValue'
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::AutoScaling::AutoScalingGroup'
+          - 'AWS::CloudFormation::Stack'
+          - 'AWS::DynamoDB::Table'
+          - 'AWS::EC2::Instance'
+          - 'AWS::EC2::Volume'
+          - 'AWS::EC2::VPC'
+          - 'AWS::ElasticLoadBalancing::LoadBalancer'
+          - 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+          - 'AWS::RDS::DBInstance'
+          - 'AWS::RDS::DBSecurityGroup'
+          - 'AWS::RDS::DBSnapshot'
+          - 'AWS::RDS::DBSubnetGroup'
+          - 'AWS::RDS::EventSubscription'
+          - 'AWS::S3::Bucket'
+          - 'AWS::EC2::InternetGateway'
+          - 'AWS::EC2::NetworkAcl'
+          - 'AWS::EC2::NetworkInterface'
+          - 'AWS::EC2::RouteTable'
+          - 'AWS::EC2::SecurityGroup'
+          - 'AWS::EC2::Subnet'
+          - 'AWS::EC2::VPNConnection'
+          - 'AWS::EC2::VPNGateway'
+          - 'AWS::CodeBuild::Project'
+      Source:
+        Owner: AWS
+        SourceIdentifier: REQUIRED_TAGS
+
+  rManagedAWSConfigRuleTags:
+    Type: "Custom::LambdaCallout"
+    Condition: cNoEnableNotification
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::Config::ConfigRule'
+      ResourceArn: !GetAtt [rManagedAWSConfigRule, Arn]
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #custom config rule triggered with configuration changes without notification
+  rCustomConfigRuleResource:
+    Type: 'AWS::Config::ConfigRule'
+    Condition: cNoEnableNotification
+    Properties:
+      ConfigRuleName:
+        Ref: pCustomResourceConfigRuleName
+      Description: Custom Config Rule Triggered by Configuration Change to Check whether your resources have the tags that you specify.
+      InputParameters:
+        tag1Key:
+          Fn::If: 
+            - ctag1Key
+            - Ref: ptag1Key
+            - "null"
+        tag1Value:
+          Fn::If: 
+            - ctag1Value
+            - Ref: ptag1Value
+            - "null"
+        tag2Key:
+          Fn::If: 
+            - ctag2Key
+            - Ref: ptag2Key
+            - "null"
+        tag2Value:
+          Fn::If: 
+            - ctag2Value
+            - Ref: ptag2Value
+            - "null"
+        tag3Key:
+          Fn::If: 
+            - ctag3Key
+            - Ref: ptag3Key
+            - "null"
+        tag3Value:
+          Fn::If: 
+            - ctag3Value
+            - Ref: ptag3Value
+            - "null"
+        tag4Key:
+          Fn::If: 
+            - ctag4Key
+            - Ref: ptag4Key
+            - "null"
+        tag4Value:
+          Fn::If: 
+            - ctag4Value
+            - Ref: ptag4Value
+            - "null"
+        tag5Key:
+          Fn::If: 
+            - ctag5Key
+            - Ref: ptag5Key
+            - "null"
+        tag5Value:
+          Fn::If: 
+            - ctag5Value
+            - Ref: ptag5Value
+            - "null"
+        tag6Key:
+          Fn::If: 
+            - ctag6Key
+            - Ref: ptag6Key
+            - "null"
+        tag6Value:
+          Fn::If: 
+            - ctag6Value
+            - Ref: ptag6Value
+            - "null"
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::Lambda::Function'
+          - 'AWS::IAM::User'
+          - 'AWS::IAM::Role'
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::GetAtt:
+            - rCustomConfigRuleResourceLambdaFunction
+            - Arn
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+          - EventSource: aws.config
+            MessageType: OversizedConfigurationItemChangeNotification
+  
+  rCustomConfigRuleResourceTags:
+    Type: "Custom::LambdaCallout"
+    Condition: cNoEnableNotification
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::Config::ConfigRule'
+      ResourceArn: !GetAtt [rCustomConfigRuleResource, Arn]
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead
+
+  #custom config rule triggered periodically without notification
+  rCustomConfigRulePeriodic:
+    Type: 'AWS::Config::ConfigRule'
+    Condition: cNoEnableNotification
+    Properties:
+      ConfigRuleName:
+        Ref: pCustomPeriodicConfigRuleName
+      Description: Custom Config Rule triggered periodically to Check whether your resources have the tags that you specify.
+      InputParameters:
+        tag1Key:
+          Fn::If: 
+            - ctag1Key
+            - Ref: ptag1Key
+            - "null"
+        tag1Value:
+          Fn::If: 
+            - ctag1Value
+            - Ref: ptag1Value
+            - "null"
+        tag2Key:
+          Fn::If: 
+            - ctag2Key
+            - Ref: ptag2Key
+            - "null"
+        tag2Value:
+          Fn::If: 
+            - ctag2Value
+            - Ref: ptag2Value
+            - "null"
+        tag3Key:
+          Fn::If: 
+            - ctag3Key
+            - Ref: ptag3Key
+            - "null"
+        tag3Value:
+          Fn::If: 
+            - ctag3Value
+            - Ref: ptag3Value
+            - "null"
+        tag4Key:
+          Fn::If: 
+            - ctag4Key
+            - Ref: ptag4Key
+            - "null"
+        tag4Value:
+          Fn::If: 
+            - ctag4Value
+            - Ref: ptag4Value
+            - "null"
+        tag5Key:
+          Fn::If: 
+            - ctag5Key
+            - Ref: ptag5Key
+            - "null"
+        tag5Value:
+          Fn::If: 
+            - ctag5Value
+            - Ref: ptag5Value
+            - "null"
+        tag6Key:
+          Fn::If: 
+            - ctag6Key
+            - Ref: ptag6Key
+            - "null"
+        tag6Value:
+          Fn::If: 
+            - ctag6Value
+            - Ref: ptag6Value
+            - "null"
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::GetAtt:
+            - rCustomConfigRulePeriodicLambdaFunction
+            - Arn
+        SourceDetails:
+          - EventSource: aws.config
+            MaximumExecutionFrequency:
+              Ref: pExecutionFrequencyForPeriodicTrigger
+            MessageType: ScheduledNotification
+
+  rCustomConfigRulePeriodicTags:
+    Type: "Custom::LambdaCallout"
+    Condition: cNoEnableNotification
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::Config::ConfigRule'
+      ResourceArn: !GetAtt [rCustomConfigRulePeriodic, Arn]
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead            

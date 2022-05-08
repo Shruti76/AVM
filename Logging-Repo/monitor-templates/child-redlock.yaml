@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: RedLock IAM Role to set read permissions
+Parameters:
+  RedlockRoleName:
+    Type: String
+    Description: 'Provide an role ARN name (Example: RedlockReadOnlyRole)'
+    AllowedPattern: '[-_a-zA-Z0-9]*'
+    Default: "188619942792_RedlockRole"
+  RedLockExternalID:
+    Type: String
+    Description: 'Provide an ExternalID (Example: Xoih821ddwf)'
+    MinLength: '1'
+    AllowedPattern: '[a-zA-Z0-9\=\,\.\@\:\/\-_]*'
+    ConstraintDescription: >-
+      ExternalID must contain alphanumeric characters and only these special
+      characters are allowed =,.@:/-.
+  AVMAccessLevelRead:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+    Default: "CAVM-Read"
+Resources:
+  RedlockRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/SecurityAudit'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: 'arn:aws:iam::188619942792:root'
+            Action: 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref RedLockExternalID
+      Policies:
+        - PolicyName: Redlock-IAM-ReadOnly-Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - 'acm:List*'
+                  - 'apigateway:GET'
+                  - 'appstream:Describe*'
+                  - 'autoscaling:Describe*'
+                  - 'cloudtrail:GetEventSelectors'
+                  - 'cloudtrail:LookupEvents'
+                  - 'cloudsearch:Describe*'
+                  - 'cognito-identity:ListTagsForResource'
+                  - 'cognito-idp:ListTagsForResource'
+                  - 'dynamodb:DescribeTable'
+                  - 'ds:Describe*'
+                  - 'elasticache:List*'
+                  - 'eks:List*'
+                  - 'eks:Describe*'
+                  - 'elasticbeanstalk:ListTagsForResource'
+                  - 'elasticbeanstalk:Describe*'
+                  - 'elasticfilesystem:Describe*'
+                  - 'elasticmapreduce:Describe*'
+                  - 'elasticmapreduce:List*'
+                  - 'inspector:Describe*'
+                  - 'inspector:List*'
+                  - 'glacier:List*'
+                  - 'glacier:GetVaultAccessPolicy'
+                  - 'glacier:GetVaultNotifications'
+                  - 'glacier:GetVaultLock'
+                  - 'glacier:GetDataRetrievalPolicy'
+                  - 'guardduty:List*'
+                  - 'guardduty:Get*'
+                  - 'iam:SimulatePrincipalPolicy'
+                  - 'iam:SimulateCustomPolicy'
+                  - 'kinesis:Describe*'
+                  - 'kinesis:List*'
+                  - 'rds:ListTagsForResource'
+                  - 'sns:List*'
+                  - 'sns:Get*'
+                  - 'ssm:DescribeParameters'
+                  - 'ssm:GetParameters'
+                  - 'ssm:ListTagsForResource'
+                  - 'sqs:SendMessage'
+                  - 'logs:FilterLogEvents'
+                  - 'logs:Get*'
+                  - 'logs:Describe*'
+                  - 'secretsmanager:List*'
+                  - 'secretsmanager:Describe*'
+                  - 'lambda:List*'
+                  - 's3:GetAccountPublicAccessBlock'
+                  - 's3:GetBucketPublicAccessBlock'
+                  - 'mq:ListBrokers'
+                  - 'mq:DescribeBroker'
+                Effect: Allow
+                Resource: '*'
+      RoleName: !Ref RedlockRoleName
+
+  RedlockRoleTags:
+    Type: "Custom::RedlockRoleTags"
+    DependsOn: RedlockRole
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref RedlockRoleName
+      Tags:
+        - key: ApplicationID
+          value: APP0002762
+        - key: ApplicationName
+          value: "Palo Alto"
+        - key: EnvironmentName
+          value: Prod
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevelRead      
+Outputs:
+  RedlockRoleName:
+    Value: !Ref RedlockRoleName
+    Description: Redlock IAM role name

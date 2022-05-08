@@ -1,0 +1,124 @@
+#  Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#  Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with
+#  the License. A copy of the License is located at
+#      http://aws.amazon.com/apache2.0/
+#  or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+#  CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and
+#  limitations under the License.
+
+---
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "AWS CloudFormation Template: SAML Integration"
+Metadata:
+  License: "Licensed under the Apache License, Version 2.0 (the 'License'). You may not use this file except in compliance with the License. A copy of the License is located at http://aws.amazon.com/apache2.0/ or in the 'license' file accompanying this file. This file is distributed on an 'AS IS' BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
+  cfn-lint:
+    config:
+      ignore_checks:
+        - W2001  # Ignore parameter not used warning
+
+Parameters:
+  MetaDataS3Bucket:
+    Type: String
+    Description: Enter name of the S3 bucket containing metadata artifact
+  S3Bucket:
+    Type: String
+    Description: Enter name of the S3 bucket containing lambda function artifact
+  S3Key:
+    Type: String
+    Default: Enter the S3 key of the lambda function artifact within bucket
+  LambdaFunction:
+    Description: FirstAmSAMLSetup
+    Type: String
+    Default: "FirstAmSAMLSetup"
+  SAMLSyncUserName:
+    Description: Enter the name for the IAM User used for Azure Sync
+    Type: String
+    Default: "Local_aws-role-azuresync"
+
+## Environment Parameters
+  AVMEnvironment:
+    Description:  Enter AVM Environment Type P,N,S 
+    Type: String
+  ApplicationName:
+    Description: Application Name associated to application to pass in as parameter into child resources
+    Type: String
+  EnvironmentName:
+    Description: Environment Name for application to pass in as parameter into child resources
+    Type: String
+  ApplicationID:
+    Description: Application ID number for the associated application to pass in as parameter into child resources
+    Type: String
+    MaxLength: 10
+  AVMAccessLevel:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+
+Resources:
+  # IAM User Service Credentials for AWS IAM Role sync with Azure
+  FAAzureSyncUser:
+    Type: AWS::IAM::User
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+          - id: F10
+            reason: "Will use inline policy."
+          - id: F2000
+            reason: "This IAM user not intended to be part of a group."  
+    Properties:
+      UserName: !Ref SAMLSyncUserName
+      Policies:
+        -
+          PolicyName: !Ref SAMLSyncUserName
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Action:
+              - iam:ListRoles
+              Resource:
+              - "*"
+              Effect: Allow
+
+  FAAzureSyncUserTags:
+    Type: "Custom::FAAzureSyncUserTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::User'
+      UserName: !Ref FAAzureSyncUser
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevel
+
+  #----------------------------------------------------------------------------------------------
+#Lambda to setting up SAML Provider in AWS IAM
+  FirstAmSAMLSetupLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Runtime: "python3.7"
+      Code:
+        S3Bucket: !Ref S3Bucket
+        S3Key: !Ref S3Key
+      Description: "Lambda to setup SAML configuration"
+      FunctionName:
+        Ref: LambdaFunction
+      Handler: "index.lambda_handler"
+      MemorySize: 128
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Local_CAVM-${AVMEnvironment}_SAMLIntegrator 
+      Timeout: 60
+      Environment: 
+        Variables:
+          S3BUCKET: !Ref MetaDataS3Bucket
+
+  #Lambda to Inkoke SAML Provider Lambda
+  FirstAmSAMLInvokeLambda:
+    Type: "Custom::LambdaCallout"
+    Properties:
+      ServiceToken: !GetAtt [FirstAmSAMLSetupLambda,Arn]

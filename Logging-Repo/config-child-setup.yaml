@@ -1,0 +1,131 @@
+#  Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#  Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with
+#  the License. A copy of the License is located at
+#      http://aws.amazon.com/apache2.0/
+#  or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+#  CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and
+#  limitations under the License.
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Enables AWSConfig in Member Account and send logs to S3 bucket in Central
+  log aggregator account and Authorizes AWSConfig Aggregator to access child Accounts
+
+Parameters:
+  AccountType:
+    Type: String
+    Description: "Enter the Account type Sandbox Prod NonProd"
+  FAConfigS3BucketPrefix:
+    Description: FA Config S3 Bucket Name Prefix.  Append Environment Name (nonprod/prod/sandbox)
+    Type: String
+  FACentralConfigAccount:
+    Description: FA Central Logging Account
+    Type: String
+  FAConfigRegion:
+    Description: FA Config Region
+    Type: String
+    Default: us-west-2
+
+  ApplicationName:
+    Description: Application Name associated to application to pass in as parameter into child resources
+    Type: String
+  EnvironmentName:
+    Description: Environment Name for application to pass in as parameter into child resources
+    Type: String
+  ApplicationID:
+    Description: Application ID number for the associated application to pass in as parameter into child resources
+    Type: String
+    MaxLength: 10
+  AVMAccessLevel:
+    Description: AVM Tag for the Access Level Control
+    Type: String
+
+Resources:
+  ConfigIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSConfigRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - config.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+  RolePolicies:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: 'config-setup-policy'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:PutObject*
+          Resource:
+          - Fn::Join:
+            - ''
+            - - 'arn:aws:s3:::'
+              - !Join ['-',[!Ref FAConfigS3BucketPrefix,!Ref AccountType]]
+              - "/AWSLogs/"
+              - Ref: AWS::AccountId
+              - "/*"
+          Condition:
+            StringLike:
+              s3:x-amz-acl: bucket-owner-full-control
+        - Effect: Allow
+          Action:
+          - s3:GetBucketAcl
+          Resource:
+            Fn::Join:
+            - ''
+            - - 'arn:aws:s3:::'
+              - !Join ['-',[!Ref FAConfigS3BucketPrefix,!Ref AccountType]]
+      Roles:
+        - Ref: ConfigIAMRole
+
+  ConfigIAMRoleTags:
+    Type: "Custom::ConfigIAMRoleTags"
+    Properties:
+      ServiceToken: !ImportValue 'ApplyTags-Lambda-Arn'
+      ResourceType: 'AWS::IAM::Role'
+      RoleName: !Ref ConfigIAMRole
+      Tags:
+        - key: ApplicationID
+          value: !Ref ApplicationID
+        - key: ApplicationName
+          value: !Ref ApplicationName
+        - key: EnvironmentName
+          value: !Ref EnvironmentName
+        - key: AVMAccessLevel
+          value: !Ref AVMAccessLevel
+
+  FAConfigRecorder:
+    Type: AWS::Config::ConfigurationRecorder
+    Properties:
+      RecordingGroup:
+        AllSupported: true
+        IncludeGlobalResourceTypes: true
+      RoleARN:
+        Fn::GetAtt:
+        - ConfigIAMRole
+        - Arn
+  FADeliveryChannel:
+    Type: AWS::Config::DeliveryChannel
+    Properties:
+      ConfigSnapshotDeliveryProperties:
+        DeliveryFrequency: One_Hour
+      S3BucketName:
+        !Join ['-',[!Ref FAConfigS3BucketPrefix,!Ref AccountType]]
+
+  # Authorizes AWSConfig Aggregator to access Member Accounts
+  AggregationAuthorization:
+    Type: AWS::Config::AggregationAuthorization
+    Properties:
+      AuthorizedAccountId:
+        Ref: FACentralConfigAccount
+      AuthorizedAwsRegion:
+        Ref: FAConfigRegion

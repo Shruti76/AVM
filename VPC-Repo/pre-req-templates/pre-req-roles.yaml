@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'pre-req deployment for VPC pipeline resources'
+Parameters:
+  InSpecRoleName:
+    Type: String
+    Description: Role name for executing InSpec testing in target account
+  AVMAccountID:
+    Type: String
+    Description: CAVM account allowed to assume a role
+  RolePath:
+    Type: String
+    Description: Subpath to place roles in.
+    Default: /CAVM/
+Resources:  
+  InSpecRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: "* resource used for list permissions"
+          - id: W28
+            reason: "Explicit name defined to allow AVM to assume role"                   
+    Properties:
+      RoleName: !Ref InSpecRoleName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Ref AVMAccountID
+            Action:
+              - sts:AssumeRole
+            Condition:
+              StringEquals:
+                "iam:ResourceTag/AVMAccessLevel": "CAVM"
+      Path: !Ref RolePath
+      Policies:
+        -
+          PolicyName: inline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            -
+              Effect: Allow
+              Action:
+                - iam:GetRole
+                - iam:GetRolePolicy
+                - iam:ListRoles
+                - iam:ListRolePolicies
+                - iam:ListRoleTags
+                - iam:ListAttachedRolePolicies
+              Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/*"
+            -
+              Effect: Allow
+              Action:
+                - cloudformation:Get*
+                - cloudformation:List*
+                - cloudformation:DescribeStacks
+              Resource: !Sub "arn:aws:cloudformation:*:${AWS::AccountId}:stack/*"
+            -
+              Effect: Allow
+              Action:
+                - cloudformation:ListExports
+              Resource: "*"              
+            - Effect: Allow
+              Action:
+                - lambda:List*
+                - lambda:Get*
+              Resource: !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:*"
+            - Effect: Allow
+              Action:
+                - ec2:Get*
+                - ec2:Describe*
+              Resource: "*"
+      Tags:
+        - Key: AVMAccessLevel
+          Value: "CAVM"               

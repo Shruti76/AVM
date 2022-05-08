@@ -1,0 +1,162 @@
+#  Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#  Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with
+#  the License. A copy of the License is located at
+#      http://aws.amazon.com/apache2.0/
+#  or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+#  CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and
+#  limitations under the License.
+
+---
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "AWS CloudFormation Template: SAML Integration"
+Metadata:
+  License: "Licensed under the Apache License, Version 2.0 (the 'License'). You may not use this file except in compliance with the License. A copy of the License is located at http://aws.amazon.com/apache2.0/ or in the 'license' file accompanying this file. This file is distributed on an 'AS IS' BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
+  cfn-lint:
+    config:
+      ignore_checks:
+        - W2001  # Ignore parameter not used warning
+Parameters:
+  AVMAccountNumber:
+    Description: AWS Account Number for AVM Account
+    Type: String
+    MaxLength: 12
+    MinLength: 12
+    AllowedPattern: "[0-9]+"
+    Default: "037765247764"
+  LambdaFunction:
+    Description: FirstAmSAMLSetup
+    Type: String
+    Default: "FirstAmSAMLSetup"
+  SAMLSyncUserManagerRoleName:
+    Description: Enter the name for the IAM role for SAML Azure Sync Setup manager
+    Type: String
+    Default: "037765247764_SAML-Sync-Admin"
+  SAMLSyncUserName:
+    Description: Enter the name for the IAM User used for Azure Sync
+    Type: String
+    Default: "Local_aws-role-azuresync"
+  LambdaSAMLRoleName:
+    Description: Enter the name for the Lambda SAML Integrator Role
+    Type: String
+    Default: "Local_CAVM-P_SAMLIntegrator"
+  MetadataBucketName:
+    Description: CodePipline Metadata S3 Bucket in ACM Account, which holds the Metadata file
+    Type: String
+    Default: "awsi-p-1-cavm-s3-admetadata"
+
+Resources:
+#IAM User Service Credentials for AWS IAM Role sync with Azure
+  FAAzureSyncUser:
+    Type: AWS::IAM::User
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Resource found with an explicit name, this disallows updates that require replacement of this resource"
+          - id: F10
+            reason: "Will use inline policy."
+          - id: F2000
+            reason: "This IAM user not intended to be part of a group."  
+    Properties:
+      UserName: !Ref SAMLSyncUserName
+      Policies:
+        -
+          PolicyName: !Ref SAMLSyncUserName
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Action:
+              - iam:ListRoles
+              Resource:
+              - "*"
+              Effect: Allow
+#IAM Role used to the Download the Credentials for FAAzureSyncUser
+  SAMLSyncUserManagerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref SAMLSyncUserManagerRoleName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS:
+            - !Ref AVMAccountNumber
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+#IAM Policy used to the Download the Credentials for FAAzureSyncUser
+  SAMLSyncUserManagerPolicy:
+    Type: AWS::IAM::Policy
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F4
+            reason: "IAM policy should not allow * action"
+          - id: W12
+            reason: "IAM policy should not allow * resource"
+    Properties:
+      PolicyName: !Ref SAMLSyncUserManagerRoleName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        -
+          Effect: Allow
+          Action:
+            - iam:DeleteAccessKey
+            - iam:GetAccessKeyLastUsed
+            - iam:UpdateAccessKey
+            - iam:GetUser
+            - iam:CreateAccessKey
+            - iam:ListAccessKeys
+          Resource: !Sub arn:aws:iam::*:user/${SAMLSyncUserName}
+        -
+          Effect: Allow
+          Action:
+            - iam:List*
+            - iam:Get*
+          Resource: "*"
+      Roles:
+        - !Ref SAMLSyncUserManagerRole
+
+#Lambda to setting up SAML Provider in AWS IAM
+  FirstAmSAMLSetupLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Runtime: "python2.7"
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          from botocore.exceptions import ClientError
+          ### SAML configuration ###
+          federationprovidername = 'AzureADSync'
+          S3BucketSAML = 'awsi-p-1-cavm-s3-admetadata'
+          ### Lambda Execution ###
+          S3client = boto3.client('s3')
+          IAMclient = boto3.client('iam')
+          def lambda_handler(event, context):
+              account_number = str(context.invoked_function_arn).split(':')[4]
+              S3BucketSAMLKey = 'AzureADMetadata-' + account_number + '.xml'
+              try:
+                  S3response = S3client.get_object(
+                      Bucket=S3BucketSAML,
+                      Key=S3BucketSAMLKey
+                  )
+                  print('Loaded Meta data from S3')
+                  idpmetadata = S3response['Body'].read()
+                  IAMresponse = IAMclient.update_saml_provider(
+                      SAMLMetadataDocument=idpmetadata,
+                      Name=federationprovidername
+                  )
+              except Exception, e:
+                  print ('ERROR: SAML Provider Setup Failed = ' + str(e))
+              return 'SAML Provider setup Function ran. Check Logs for details.'
+      Description: "Lambda to setup SAML configuration"
+      FunctionName:
+        Ref: LambdaFunction
+      Handler: "index.lambda_handler"
+      MemorySize: 128
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaSAMLRoleName}
+      Timeout: 60

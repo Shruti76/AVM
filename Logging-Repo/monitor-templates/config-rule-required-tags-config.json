@@ -1,0 +1,22 @@
+{
+    "Parameters": {
+        "pManagedConfigRuleName": "managed-required-tags",
+        "pCustomResourceConfigRuleName": "custom-required-tags-resource",
+        "pCustomPeriodicConfigRuleName": "custom-required-tags-periodic",
+        "pEnableNotification": "Yes",
+        "pSNSTopicName": "required-tags-rule-sns-topic",
+        "pExecutionFrequencyForPeriodicTrigger": "TwentyFour_Hours",
+        "ptag1Key": "ApplicationID",
+        "ptag2Key": "ApplicationName",
+        "ptag3Key": "EnvironmentName",
+        "ptag4Key": "",
+        "ptag5Key": "",
+        "ptag6Key": "",
+        "ptag1Value": "",
+        "ptag2Value": "",
+        "ptag3Value": "",
+        "ptag4Value": "",
+        "ptag5Value": "",
+        "ptag6Value": ""
+    }
+}
